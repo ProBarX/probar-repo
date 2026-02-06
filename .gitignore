@@ -1,0 +1,39 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+*.pot
+*.pyc
+
+# Django project database and media
+probar_api/db.sqlite3
+probar_api/db.sqlite3-journal
+probar_api/media/
+
+# Environments / Secrets
+.env
+*.env
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+probar_api/.env
+probar_api/probar_api/.env
+
+# Build / coverage / eggs
+dist/
+build/
+coverage/
+*.coverage
+*.egg-info/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
