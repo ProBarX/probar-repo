@@ -1,6 +1,7 @@
-ProBarX — Como preparar e rodar (Windows / PowerShell)
+# ProBarAPI — Como preparar e rodar (Windows / PowerShell)
 
 Este guia mostra os passos mínimos para preparar o ambiente e executar o projeto localmente.
+
 
 Pré-requisitos
 - Python 3.11+ instalado e disponível no `PATH`.
