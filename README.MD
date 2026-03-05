@@ -39,7 +39,7 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-Edite ` .env` e defina ao menos `DEBUG` e `SECRET_KEY`. Nunca versionar chaves reais.
+Edite ` .env` e defina as variáveis necessárias. Nunca versionar chaves reais.
 
 6) Aplique as migrações e crie um super usuário(opcional):
 
