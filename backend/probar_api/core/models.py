@@ -35,6 +35,12 @@ class BaseModel(models.Model):
 
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     """Custom user model que usa email como identificador único."""
+    ROLE_CHOICES = [
+        ('cliente', 'Cliente'),
+        ('bartender', 'Bartender'),
+    ]
+    name = models.CharField(_('nome'), max_length=100, blank=True)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='cliente')
     email = models.EmailField(_('email address'), unique=True)
     first_name = models.CharField(_('first name'), max_length=150, blank=True)
     last_name = models.CharField(_('last name'), max_length=150, blank=True)
@@ -54,4 +60,3 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
-
