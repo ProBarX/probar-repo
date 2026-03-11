@@ -4,7 +4,8 @@ from core.managers import ActiveManager
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.utils.translation import gettext_lazy as _
 from .managers import CustomUserManager
-
+import uuid
+import os
 
 # Base para Soft Delete e controle de datas
 class BaseModel(models.Model):
@@ -60,3 +61,27 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+def cliente_profile_path(instance, filename):
+    ext = filename.split('.')[-1] 
+    filename = f'{uuid.uuid4()}.{ext}'
+    return os.path.join('perfil_clientes', str(instance.user.id), filename)
+
+class Cliente(BaseModel):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='cliente',
+        primary_key=True
+    )
+    
+    data_nascimento = models.DateField(null=True, blank=True)
+
+    foto_perfil = models.ImageField(
+        upload_to=cliente_profile_path,
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        return f"Cliente: {self.user.email}"
