@@ -6,20 +6,20 @@ from .models import User
 
 class CustomUserAdmin(UserAdmin):
 	model = User
-	list_display = ('email', 'first_name', 'last_name', 'is_staff', 'is_active')
-	list_filter = ('is_staff', 'is_active')
-	search_fields = ('email', 'first_name', 'last_name')
-	ordering = ('email',)
+	list_display = ('id', 'name', 'email', 'role', 'is_staff', 'is_active')
+	list_filter = ('role', 'is_staff', 'is_active')
+	search_fields = ('email', 'first_name', 'last_name', 'name')
+	ordering = ('id',)
 	fieldsets = (
 		(None, {'fields': ('email', 'password')}),
-		(_('Personal info'), {'fields': ('first_name', 'last_name')}),
+		(_('Personal info'), {'fields': ('name', 'first_name', 'last_name', 'role')}),
 		(_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
 		(_('Important dates'), {'fields': ('last_login', 'date_joined')}),
 	)
 	add_fieldsets = (
 		(None, {
 			'classes': ('wide',),
-			'fields': ('email', 'first_name', 'last_name', 'password1', 'password2', 'is_staff', 'is_active'),
+			'fields': ('email', 'name', 'first_name', 'last_name', 'password1', 'password2', 'role', 'is_staff', 'is_active'),
 		}),
 	)
 
