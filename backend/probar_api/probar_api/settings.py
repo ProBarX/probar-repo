@@ -3,7 +3,6 @@ import os
 import environ
 import dj_database_url
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -74,6 +73,8 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'probar_api.wsgi.application'
 
+env = environ.Env()
+environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
 DATABASES = {
     'default': dj_database_url.config(default=env('DATABASE_URL'))
@@ -110,5 +111,7 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
