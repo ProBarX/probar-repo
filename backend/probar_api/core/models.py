@@ -85,3 +85,68 @@ class Cliente(BaseModel):
 
     def __str__(self):
         return f"Cliente: {self.user.email}"
+    
+
+def bartender_profile_path(instance, filename):
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+    return os.path.join('perfil_bartenders', str(instance.user.id), filename)
+
+
+def bartender_document_path(instance, filename):
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+    return os.path.join('documentos_bartenders', str(instance.user.id), filename)
+
+
+class Bartender(BaseModel):
+
+    ESPECIALIDADE_CHOICES = [
+        ('showman', 'Showman'),
+        ('mixologista', 'Mixologista'),
+        ('tradicional', 'Tradicional'),
+        ('night_club', 'Night Club'),
+    ]
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='bartender',
+        primary_key=True
+    )
+
+    data_nascimento = models.DateField(null=True, blank=True)
+
+    foto_perfil = models.ImageField(
+        upload_to=bartender_profile_path,
+        null=True,
+        blank=True
+    )
+
+    foto_documento = models.ImageField(
+        upload_to=bartender_document_path,
+        null=True,
+        blank=True
+    )
+
+    anos_experiencia = models.PositiveIntegerField(
+        null=True,
+        blank=True
+    )
+
+    descricao_profissional = models.TextField(
+        blank=True
+    )
+
+    especialidades = models.JSONField(
+        default=list,
+        blank=True
+    )
+
+    cep = models.CharField(max_length=9, blank=True)
+    rua = models.CharField(max_length=255, blank=True)
+    bairro = models.CharField(max_length=255, blank=True)
+    numero = models.CharField(max_length=20, blank=True)
+
+    def __str__(self):
+        return f"Bartender: {self.user.email}"
