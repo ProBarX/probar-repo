@@ -6,6 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from .managers import CustomUserManager
 import uuid
 import os
+from django.core.exceptions import ValidationError
 
 # Base para Soft Delete e controle de datas
 class BaseModel(models.Model):
@@ -150,3 +151,39 @@ class Bartender(BaseModel):
 
     def __str__(self):
         return f"Bartender: {self.user.email}"
+
+
+class Termos(BaseModel):
+    ROLE_CHOICES = [
+        ('cliente', 'Cliente'),
+        ('bartender', 'Bartender'),
+    ]
+    content = models.TextField()
+    version = models.CharField(max_length=10)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Termo de Uso"
+        verbose_name_plural = "Termos de Uso"
+
+    def __str__(self):
+        return f"v{self.version} - {self.get_role_display()}"
+
+
+class AceiteTermos(BaseModel):
+    termo = models.ForeignKey(Termos, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    accepted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Aceite de Termos"
+        verbose_name_plural = "Aceites de Termos"
+        unique_together = ('termo', 'user')
+
+    def clean(self):
+        if self.termo.role != self.user.role:
+            raise ValidationError("O usuário não pode aceitar termos de uma função diferente da sua.")
+
+    def __str__(self):
+        return f"{self.user.email} aceitou v{self.termo.version} ({self.termo.role})"

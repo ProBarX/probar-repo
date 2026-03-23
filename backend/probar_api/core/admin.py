@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
-from .models import User, Cliente
+from .models import User, Cliente, Termos, AceiteTermos
 
 class CustomUserAdmin(UserAdmin):
 	model = User
@@ -36,3 +36,15 @@ class ClienteAdmin(admin.ModelAdmin):
     search_fields = (
         'user__email',
     )
+
+
+@admin.register(Termos)
+class TermosAdmin(admin.ModelAdmin):
+    list_display = ('id', 'version', 'role', 'content')
+    search_fields = ('version', 'role', 'content')
+
+
+@admin.register(AceiteTermos)
+class AceiteTermosAdmin(admin.ModelAdmin):
+    list_display = ('id', 'termo', 'user', 'accepted_at')
+    search_fields = ('termo__version', 'user__email')
