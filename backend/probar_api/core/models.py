@@ -33,8 +33,6 @@ class BaseModel(models.Model):
         self.deleted_at = None
         self.save()
 
-
-
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     """Custom user model que usa email como identificador único."""
     ROLE_CHOICES = [

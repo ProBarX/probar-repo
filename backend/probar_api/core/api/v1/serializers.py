@@ -1,8 +1,8 @@
 from rest_framework import serializers
-from core.models import User, Termos, AceiteTermos
+from core.models import User, Termos, AceiteTermos, Cliente
 
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False)
+    password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
@@ -94,4 +94,31 @@ class AceiteTermosSerializer(serializers.ModelSerializer):
             user=user,
             termo=termo
         )
-    
+
+
+class ClienteSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+    name = serializers.CharField(source="user.name")
+
+    class Meta:
+        model = Cliente
+        fields = [
+            "email",
+            "name",
+            "data_nascimento",
+            "foto_perfil",
+            "created_at",
+        ]
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop("user", {})
+
+        # atualiza cliente
+        instance = super().update(instance, validated_data)
+
+        # atualiza user
+        if "name" in user_data:
+            instance.user.name = user_data["name"]
+            instance.user.save()
+
+        return instance
