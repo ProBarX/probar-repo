@@ -43,6 +43,23 @@ INSTALLED_APPS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+
+    "DATETIME_FORMAT": "%Y-%m-%d %H:%M:%S",
+    "DATETIME_INPUT_FORMATS": [
+        "%Y-%m-%d %H:%M:%S",  # 2025-10-20 19:30:00
+        "%Y-%m-%d %H:%M"      # 2025-10-20 19:30
+    ],
+}
+
+
+SIMPLE_JWT = {
+    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
 
