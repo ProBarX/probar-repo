@@ -50,11 +50,11 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
 
-    "DATETIME_FORMAT": "%Y-%m-%d %H:%M:%S",
-    "DATETIME_INPUT_FORMATS": [
-        "%Y-%m-%d %H:%M:%S",  # 2025-10-20 19:30:00
-        "%Y-%m-%d %H:%M"      # 2025-10-20 19:30
-    ],
+    'DATE_FORMAT': '%d/%m/%Y', # formato de data 
+    'TIME_FORMAT': '%H:%M', # formato de hora
+    # formatos de entrada para data e hora, incluindo ISO 8601
+    'DATE_INPUT_FORMATS': ['%d/%m/%Y', 'iso-8601'],
+    'TIME_INPUT_FORMATS': ['%H:%M', 'iso-8601'],
 }
 
 
