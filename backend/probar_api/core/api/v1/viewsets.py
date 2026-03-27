@@ -1,9 +1,11 @@
 from rest_framework import viewsets
-from core.models import User, Termos, AceiteTermos, Cliente
-from .serializers import UserSerializer, TermosSerializer, AceiteTermosSerializer, ClienteSerializer
+from core.models import User, Termos, AceiteTermos, Cliente, Evento
+from .serializers import UserSerializer, TermosSerializer, AceiteTermosSerializer, ClienteSerializer, EventoSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
+
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -22,8 +24,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return User.objects.filter(id=user.id)
 
-class TermosViewSet(viewsets.ModelViewSet):
 
+class TermosViewSet(viewsets.ModelViewSet):
     queryset = Termos.objects.all()
     serializer_class = TermosSerializer
 
@@ -34,6 +36,7 @@ class AceiteTermosViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return AceiteTermos.objects.filter(user=self.request.user)
+
 
 class ClienteViewSet(viewsets.ModelViewSet):
     serializer_class = ClienteSerializer
@@ -52,3 +55,9 @@ class ClienteViewSet(viewsets.ModelViewSet):
         cliente = Cliente.objects.get(user=request.user)
         serializer = self.get_serializer(cliente)
         return Response(serializer.data)
+    
+
+class EventoViewSet(viewsets.ModelViewSet):
+    queryset = Evento.objects.select_related('cliente').all()
+    serializer_class = EventoSerializer
+    permission_classes = [IsAuthenticated]
