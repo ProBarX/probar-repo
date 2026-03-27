@@ -185,3 +185,32 @@ class AceiteTermos(BaseModel):
 
     def __str__(self):
         return f"{self.user.email} aceitou v{self.termo.version} ({self.termo.role})"
+
+
+class Evento(BaseModel):
+    status_choices = [
+        ('em_andamento', 'Em Andamento'),
+        ('confirmado', 'Confirmado'),
+        ('finalizado', 'Finalizado'),
+        ('cancelado', 'Cancelado'),
+    ]
+
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='eventos')
+    nome = models.CharField(max_length=255)
+    data = models.DateField()
+    hora_inicio = models.TimeField()
+    hora_fim = models.TimeField()
+    cep = models.CharField(max_length=9, blank=True)
+    rua = models.CharField(max_length=255, blank=True)
+    numero = models.CharField(max_length=20, blank=True)
+    complemento = models.CharField(max_length=255, blank=True)
+    quantidade_convidados = models.PositiveIntegerField()
+    descricao_evento = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=status_choices, default='em_andamento')
+
+    class Meta:
+        verbose_name = "Evento"
+        verbose_name_plural = "Eventos"
+
+    def __str__(self):
+        return f"Evento: {self.nome}"

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import User, Termos, AceiteTermos, Cliente
+from core.models import User, Termos, AceiteTermos, Cliente, Evento
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -122,3 +122,26 @@ class ClienteSerializer(serializers.ModelSerializer):
             instance.user.save()
 
         return instance
+
+
+class EventoSerializer(serializers.ModelSerializer):
+    cliente_nome = serializers.CharField(source='cliente.nome', read_only=True)
+
+    class Meta:
+        model = Evento
+        fields = [
+            'id',
+            'cliente',
+            'cliente_nome',
+            'nome',
+            'data',
+            'hora_inicio',
+            'hora_fim',
+            'cep',
+            'rua',
+            'numero',
+            'complemento',
+            'quantidade_convidados',
+            'descricao_evento',
+            'status',
+        ]
