@@ -11,8 +11,8 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "password",
             "name",
-            "role",
-            "created_at"
+            "tipo",
+            "criado_em"
         ]
 
     def create(self, validated_data):
@@ -42,12 +42,12 @@ class TermosSerializer(serializers.ModelSerializer):
         model = Termos
         fields = [
             "id",
-            "content",
-            "version",
-            "role",
-            "is_active",
-            "created_at",
-            "updated_at"
+            "conteudo",
+            "versao",
+            "tipo",
+            "esta_ativo",
+            "criado_em",
+            "atualizado_em"
         ]
     
 
@@ -61,9 +61,9 @@ class AceiteTermosSerializer(serializers.ModelSerializer):
             "termo_id",
             "termo",
             "user",
-            "accepted_at"
+            "aceito_em"
         ]
-        read_only_fields = ["termo", "user", "accepted_at"]
+        read_only_fields = ["termo", "user", "aceito_em"]
 
     def validate(self, data):
         user = self.context['request'].user
@@ -74,7 +74,7 @@ class AceiteTermosSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Termo não encontrado.")
 
         # valida perfil do termo com perfil do usuário
-        if termo.role != user.role:
+        if termo.tipo != user.tipo:
             raise serializers.ValidationError("Termo inválido para este usuário.")
 
         # salva para usar no create
@@ -107,7 +107,7 @@ class ClienteSerializer(serializers.ModelSerializer):
             "name",
             "data_nascimento",
             "foto_perfil",
-            "created_at",
+            "criado_em",
         ]
 
     def update(self, instance, validated_data):
@@ -142,7 +142,7 @@ class BartenderSerializer(serializers.ModelSerializer):
             "rua",
             "bairro",
             "numero",
-            "created_at",
+            "criado_em",
         ]
 
     def update(self, instance, validated_data):

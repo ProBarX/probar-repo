@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export function middleware(request: NextRequest) {
-  const role = request.cookies.get("role")?.value
+  const tipo = request.cookies.get("tipo")?.value
   const token = request.cookies.get("token")?.value
   const path = request.nextUrl.pathname
 
@@ -12,12 +12,12 @@ export function middleware(request: NextRequest) {
   }
 
   // bartender tentando acessar rota de cliente
-  if (path.startsWith("/client") && role !== "cliente") {
+  if (path.startsWith("/client") && tipo !== "cliente") {
     return NextResponse.redirect(new URL("/bartender/home", request.url))
   }
 
   // cliente tentando acessar rota de bartender
-  if (path.startsWith("/bartender") && role !== "bartender") {
+  if (path.startsWith("/bartender") && tipo !== "bartender") {
     return NextResponse.redirect(new URL("/client/home", request.url))
   }
 

@@ -10,10 +10,10 @@ from django.core.exceptions import ValidationError
 
 # Base para Soft Delete e controle de datas
 class BaseModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)  # data de criação
-    updated_at = models.DateTimeField(auto_now=True)  # data de atualização
-    is_deleted = models.BooleanField(default=False)   # soft delete
-    deleted_at = models.DateTimeField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)  # data de criação
+    atualizado_em = models.DateTimeField(auto_now=True)  # data de atualização
+    esta_deletado = models.BooleanField(default=False)   # soft delete
+    deletado_em = models.DateTimeField(null=True, blank=True)
 
     objects = ActiveManager()       # só retorna registros ativos
     all_objects = models.Manager()  # retorna tudo (inclusive deletados)
@@ -23,24 +23,25 @@ class BaseModel(models.Model):
 
     def delete(self, using=None, keep_parents=False):
         """Soft delete: marca como deletado em vez de remover"""
-        self.is_deleted = True
-        self.deleted_at = timezone.now()
+        self.esta_deletado = True
+        self.deletado_em = timezone.now()
         self.save()
 
     def restore(self):
         """Restaura um item deletado"""
-        self.is_deleted = False
-        self.deleted_at = None
+        self.esta_deletado = False
+        self.deletado_em = None
         self.save()
+
 
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     """Custom user model que usa email como identificador único."""
-    ROLE_CHOICES = [
+    TIPO_CHOICES = [
         ('cliente', 'Cliente'),
         ('bartender', 'Bartender'),
     ]
     name = models.CharField(_('nome'), max_length=100, blank=True)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='cliente')
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='cliente')
     email = models.EmailField(_('email address'), unique=True)
     first_name = models.CharField(_('first name'), max_length=150, blank=True)
     last_name = models.CharField(_('last name'), max_length=150, blank=True)
@@ -140,27 +141,27 @@ class Bartender(BaseModel):
 
 
 class Termos(BaseModel):
-    ROLE_CHOICES = [
+    TIPO_CHOICES = [
         ('cliente', 'Cliente'),
         ('bartender', 'Bartender'),
     ]
-    content = models.TextField()
-    version = models.CharField(max_length=10)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
-    is_active = models.BooleanField(default=True)
+    conteudo = models.TextField()
+    versao = models.CharField(max_length=10)
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    esta_ativo = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = "Termo de Uso"
         verbose_name_plural = "Termos de Uso"
 
     def __str__(self):
-        return f"v{self.version} - {self.get_role_display()}"
+        return f"v{self.versao} - {self.get_tipo_display()}"
 
 
 class AceiteTermos(BaseModel):
     termo = models.ForeignKey(Termos, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    accepted_at = models.DateTimeField(auto_now_add=True)
+    aceito_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Aceite de Termos"
@@ -168,11 +169,11 @@ class AceiteTermos(BaseModel):
         unique_together = ('termo', 'user')
 
     def clean(self):
-        if self.termo.role != self.user.role:
+        if self.termo.tipo != self.user.tipo:
             raise ValidationError("O usuário não pode aceitar termos de uma função diferente da sua.")
 
     def __str__(self):
-        return f"{self.user.email} aceitou v{self.termo.version} ({self.termo.role})"
+        return f"{self.user.email} aceitou v{self.termo.versao} ({self.termo.tipo})"
 
 
 class Evento(BaseModel):

@@ -3,8 +3,8 @@ from django.contrib.auth.base_user import BaseUserManager
 
 
 class ActiveManager(models.Manager):
-     def get_queryset(self):
-        return super().get_queryset().filter(is_deleted=False)
+      def get_queryset(self):
+            return super().get_queryset().filter(esta_deletado=False)
 
 
 class CustomUserManager(BaseUserManager):
