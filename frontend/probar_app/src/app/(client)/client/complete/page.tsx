@@ -1,7 +1,64 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { CompleteRegisterForm } from "@/components/client/CompleteRegisterForm"
 import { kaushan } from "@/fonts"
 
 export default function CompletePage() {
+  const router = useRouter()
+  const [showForm, setShowForm] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function checkUserData() {
+      try {
+        const tokenRes = await fetch("/api/auth/get-token")
+        const { token } = await tokenRes.json()
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/clientes/me/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        if (res.ok) {
+          const userData = await res.json()
+          // Se o usuário já tem data_nascimento salva, redireciona para home
+          if (userData.data_nascimento) {
+            router.push("/client/home")
+          } else {
+            setShowForm(true)
+          }
+        } else {
+          setShowForm(true)
+        }
+      } catch {
+        setShowForm(true)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    checkUserData()
+  }, [router])
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        backgroundColor: "#f5f5f5",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}>
+        <p>Carregando...</p>
+      </div>
+    )
+  }
+
+  if (!showForm) {
+    return null
+  }
+
   return (
     <div style={{
       minHeight: "100vh",

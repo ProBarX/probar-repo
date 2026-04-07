@@ -18,7 +18,7 @@ export function LoginForm() {
     setError("")
 
     try {
-      const res = await fetch("http://localhost:8000/api/token/", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/token/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -43,7 +43,7 @@ export function LoginForm() {
 
       if (data.tipo === "cliente") {
         // verifica se cadastro está completo
-        const clienteRes = await fetch("http://localhost:8000/api/v1/clientes/", {
+        const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/clientes/`, {
           headers: { Authorization: `Bearer ${data.access}` },
         })
         const cliente = await clienteRes.json()
