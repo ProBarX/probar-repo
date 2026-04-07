@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import User, Termos, AceiteTermos, Cliente, Evento
+from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -122,6 +122,42 @@ class ClienteSerializer(serializers.ModelSerializer):
             instance.user.save()
 
         return instance
+    
+
+class BartenderSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+    nome = serializers.CharField(source="user.name")
+
+    class Meta:
+        model = Bartender
+        fields = [
+            "email",
+            "nome",
+            "data_nascimento",
+            "foto_perfil",
+            "anos_experiencia",
+            "descricao_profissional",
+            "especialidades",
+            "cep",
+            "rua",
+            "bairro",
+            "numero",
+            "created_at",
+        ]
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop("user", {})
+
+        # atualiza bartender
+        instance = super().update(instance, validated_data)
+
+        # atualiza user
+        if "name" in user_data:
+            instance.user.name = user_data["name"]
+            instance.user.save()
+
+        return instance
+
 
 
 class EventoSerializer(serializers.ModelSerializer):

@@ -1,6 +1,6 @@
 from rest_framework import viewsets
-from core.models import User, Termos, AceiteTermos, Cliente, Evento
-from .serializers import UserSerializer, TermosSerializer, AceiteTermosSerializer, ClienteSerializer, EventoSerializer
+from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender
+from .serializers import UserSerializer, TermosSerializer, AceiteTermosSerializer, ClienteSerializer, EventoSerializer, BartenderSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -63,6 +63,25 @@ class ClienteViewSet(viewsets.ModelViewSet):
         serializer.save()
         return Response(serializer.data)
     
+
+class BartenderViewSet(viewsets.ModelViewSet):
+    serializer_class = BartenderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.is_staff:
+            return Bartender.objects.all()
+
+        return Bartender.objects.filter(user=user)
+    
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        bartender = Bartender.objects.get(user=request.user)
+        serializer = self.get_serializer(bartender)
+        return Response(serializer.data)
+
 
 class EventoViewSet(viewsets.ModelViewSet):
     queryset = Evento.objects.select_related('cliente').all()

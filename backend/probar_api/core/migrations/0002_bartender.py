@@ -23,7 +23,6 @@ class Migration(migrations.Migration):
                 ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, primary_key=True, related_name='bartender', serialize=False, to=settings.AUTH_USER_MODEL)),
                 ('data_nascimento', models.DateField(blank=True, null=True)),
                 ('foto_perfil', models.ImageField(blank=True, null=True, upload_to=core.models.bartender_profile_path)),
-                ('foto_documento', models.ImageField(blank=True, null=True, upload_to=core.models.bartender_document_path)),
                 ('anos_experiencia', models.PositiveIntegerField(blank=True, null=True)),
                 ('descricao_profissional', models.TextField(blank=True)),
                 ('especialidades', models.JSONField(blank=True, default=list)),
