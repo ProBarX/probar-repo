@@ -5,20 +5,20 @@ from .models import User, Cliente, Termos, AceiteTermos, Evento, Bartender
 
 class CustomUserAdmin(UserAdmin):
 	model = User
-	list_display = ('id', 'name', 'email', 'role', 'is_staff', 'is_active')
-	list_filter = ('role', 'is_staff', 'is_active')
+	list_display = ('id', 'name', 'email', 'tipo', 'is_staff', 'is_active')
+	list_filter = ('tipo', 'is_staff', 'is_active')
 	search_fields = ('email', 'first_name', 'last_name', 'name')
 	ordering = ('id',)
 	fieldsets = (
 		(None, {'fields': ('email', 'password')}),
-		(_('Personal info'), {'fields': ('name', 'first_name', 'last_name', 'role')}),
+		(_('Personal info'), {'fields': ('name', 'first_name', 'last_name', 'tipo')}),
 		(_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
 		(_('Important dates'), {'fields': ('last_login', 'date_joined')}),
 	)
 	add_fieldsets = (
 		(None, {
 			'classes': ('wide',),
-			'fields': ('email', 'name', 'first_name', 'last_name', 'password1', 'password2', 'role', 'is_staff', 'is_active'),
+			'fields': ('email', 'name', 'first_name', 'last_name', 'password1', 'password2', 'tipo', 'is_staff', 'is_active'),
 		}),
 	)
 
@@ -53,20 +53,20 @@ class BartenderAdmin(admin.ModelAdmin):
 
 	def formfield_for_foreignkey(self, db_field, request, **kwargs):
 		if db_field.name == 'user':
-			kwargs['queryset'] = User.objects.filter(role='bartender')
+			kwargs['queryset'] = User.objects.filter(tipo='bartender')
 		return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(Termos)
 class TermosAdmin(admin.ModelAdmin):
-    list_display = ('id', 'version', 'role', 'content')
-    search_fields = ('version', 'role', 'content')
+	list_display = ('id', 'versao', 'tipo', 'conteudo')
+	search_fields = ('versao', 'tipo', 'conteudo')
 
 
 @admin.register(AceiteTermos)
 class AceiteTermosAdmin(admin.ModelAdmin):
-    list_display = ('id', 'termo', 'user', 'accepted_at')
-    search_fields = ('termo__version', 'user__email')
+	list_display = ('id', 'termo', 'user', 'aceito_em')
+	search_fields = ('termo__versao', 'user__email')
     
 
 @admin.register(Evento)

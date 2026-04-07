@@ -37,11 +37,11 @@ export function LoginForm() {
         body: JSON.stringify({
           token: data.access,
           refresh: data.refresh,
-          role: data.role,
+          tipo: data.tipo,
         }),
       })
 
-      if (data.role === "cliente") {
+      if (data.tipo === "cliente") {
         // verifica se cadastro está completo
         const clienteRes = await fetch("http://localhost:8000/api/v1/clientes/", {
           headers: { Authorization: `Bearer ${data.access}` },

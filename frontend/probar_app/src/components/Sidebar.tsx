@@ -28,10 +28,10 @@ const navItems: Record<Role, NavItem[]> = {
   ],
 }
 
-export function Sidebar({ role }: { role: Role }) {
+export function Sidebar({ tipo }: { tipo: Role }) {
   const pathname = usePathname()
   const router = useRouter()
-  const items = navItems[role]
+  const items = navItems[tipo]
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" })
@@ -99,7 +99,7 @@ export function Sidebar({ role }: { role: Role }) {
         <div style={{ borderTop: "1px solid #A7A7A7", marginBottom: "12px" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "0 16px 24px" }}>
           <Link
-            href={`/${role}/perfil`}
+            href={`/${tipo}/perfil`}
             style={{
               display: "flex",
               alignItems: "center",

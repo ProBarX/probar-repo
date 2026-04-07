@@ -5,14 +5,14 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 export type UserRole = "cliente" | "bartender"
 
 interface UserRoleContextType {
-  role: UserRole
-  setRole: (role: UserRole) => void
+  tipo: UserRole
+  setRole: (tipo: UserRole) => void
 }
 
 const UserRoleContext = createContext<UserRoleContextType | undefined>(undefined)
 
 export function UserRoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRoleState] = useState<UserRole>("cliente")
+  const [tipo, setRoleState] = useState<UserRole>("cliente")
 
   useEffect(() => {
     const stored = typeof window !== "undefined" ? localStorage.getItem("probar-role") : null
@@ -29,7 +29,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <UserRoleContext.Provider value={{ role, setRole }}>
+    <UserRoleContext.Provider value={{ tipo, setRole }}>
       {children}
     </UserRoleContext.Provider>
   )
