@@ -3,17 +3,70 @@
 import Link from "next/link"
 import { useState } from "react"
 import { Eye, EyeOff } from "lucide-react"
-import { useUserRole } from "@/lib/user-role-context"
+import { useRouter } from "next/navigation"
 
 export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
-  const { role } = useUserRole()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const router = useRouter()
 
-  const dashboardPath = role === "bartender" ? "/bartender" : "/home"
+  async function handleLogin() {
+    setLoading(true)
+    setError("")
+
+    try {
+      const res = await fetch("http://localhost:8000/api/token/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (!res.ok) {
+        setError("Email ou senha inválidos.")
+        return
+      }
+
+      const data = await res.json()
+
+      await fetch("/api/auth/set-cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: data.access,
+          refresh: data.refresh,
+          role: data.role,
+        }),
+      })
+
+      if (data.role === "cliente") {
+        // verifica se cadastro está completo
+        const clienteRes = await fetch("http://localhost:8000/api/v1/clientes/", {
+          headers: { Authorization: `Bearer ${data.access}` },
+        })
+        const cliente = await clienteRes.json()
+
+        if (!cliente.data_nascimento) {
+          router.push("/client/complete")
+        } else {
+          router.push("/client/home")
+        }
+      } else {
+        router.push("/bartender/home")
+      }
+
+    } catch {
+      setError("Erro ao conectar com o servidor.")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div className="w-full max-w-md space-y-8">
-      <form className="space-y-5">
+      <div className="space-y-5">
         <div className="space-y-2">
           <label htmlFor="email" className="text-sm font-medium text-foreground">
             Email
@@ -21,6 +74,8 @@ export function LoginForm() {
           <input
             id="email"
             type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="seu@email.com"
             className="border p-2 rounded mb-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] w-full"
           />
@@ -34,6 +89,8 @@ export function LoginForm() {
             <input
               id="password"
               type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="Sua senha"
               className="border p-2 rounded mb-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] w-full pr-10"
             />
@@ -52,16 +109,20 @@ export function LoginForm() {
               Esqueceu a senha?
             </Link>
           </div>
-        
         </div>
 
-        <Link
-          href={dashboardPath}
-          className="flex h-12 w-full items-center justify-center rounded-lg bg-[#FFC105] hover:bg-yellow-500 text-black font-semibold transition-colors"
+        {error && (
+          <p className="text-sm text-red-500 text-center">{error}</p>
+        )}
+
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="flex h-12 w-full items-center justify-center rounded-lg bg-[#FFC105] hover:bg-yellow-500 text-black font-semibold transition-colors disabled:opacity-60"
         >
-          Login
-        </Link>
-      </form>
+          {loading ? "Entrando..." : "Login"}
+        </button>
+      </div>
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
@@ -73,27 +134,15 @@ export function LoginForm() {
       </div>
 
       <div className="flex justify-center gap-4">
-        <button
-          type="button"
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted"
-          aria-label="Entrar com Google"
-        >
+        <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted" aria-label="Entrar com Google">
           <span className="text-lg font-bold">G</span>
         </button>
-        <button
-          type="button"
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted"
-          aria-label="Entrar com Apple"
-        >
+        <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted" aria-label="Entrar com Apple">
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
           </svg>
         </button>
-        <button
-          type="button"
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted"
-          aria-label="Entrar com Facebook"
-        >
+        <button type="button" className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted" aria-label="Entrar com Facebook">
           <span className="text-lg font-bold">f</span>
         </button>
       </div>

@@ -50,10 +50,17 @@ class ClienteViewSet(viewsets.ModelViewSet):
 
         return Cliente.objects.filter(user=user)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get', 'patch'])
     def me(self, request):
         cliente = Cliente.objects.get(user=request.user)
-        serializer = self.get_serializer(cliente)
+
+        if request.method == 'GET':
+            serializer = self.get_serializer(cliente)
+            return Response(serializer.data)
+
+        serializer = self.get_serializer(cliente, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(serializer.data)
     
 
