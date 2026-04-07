@@ -62,7 +62,7 @@ export function CompleteRegisterForm() {
       formData.append("data_nascimento", dataISO)
       if (file) formData.append("foto_perfil", file)
 
-      const res = await fetch("http://localhost:8000/api/v1/clientes/me/",{
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/clientes/me/`,{
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
