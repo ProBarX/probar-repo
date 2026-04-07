@@ -92,12 +92,6 @@ def bartender_profile_path(instance, filename):
     return os.path.join('perfil_bartenders', str(instance.user.id), filename)
 
 
-def bartender_document_path(instance, filename):
-    ext = filename.split('.')[-1]
-    filename = f'{uuid.uuid4()}.{ext}'
-    return os.path.join('documentos_bartenders', str(instance.user.id), filename)
-
-
 class Bartender(BaseModel):
 
     ESPECIALIDADE_CHOICES = [
@@ -122,12 +116,6 @@ class Bartender(BaseModel):
         blank=True
     )
 
-    foto_documento = models.ImageField(
-        upload_to=bartender_document_path,
-        null=True,
-        blank=True
-    )
-
     anos_experiencia = models.PositiveIntegerField(
         null=True,
         blank=True
@@ -137,8 +125,8 @@ class Bartender(BaseModel):
         blank=True
     )
 
-    especialidades = models.JSONField(
-        default=list,
+    especialidades = models.CharField(
+        max_length=50, choices=ESPECIALIDADE_CHOICES,
         blank=True
     )
 
