@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
-from .models import User, Cliente, Termos, AceiteTermos, Evento
+from .models import User, Cliente, Termos, AceiteTermos, Evento, Bartender
 
 class CustomUserAdmin(UserAdmin):
 	model = User
@@ -36,6 +36,25 @@ class ClienteAdmin(admin.ModelAdmin):
     search_fields = (
         'user__email',
     )
+
+
+@admin.register(Bartender)
+class BartenderAdmin(admin.ModelAdmin):
+	  
+	list_display = (
+		'user_id',
+		'user',
+		'data_nascimento'
+	)
+
+	search_fields = (
+		'user__email',
+	)
+
+	def formfield_for_foreignkey(self, db_field, request, **kwargs):
+		if db_field.name == 'user':
+			kwargs['queryset'] = User.objects.filter(role='bartender')
+		return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(Termos)
