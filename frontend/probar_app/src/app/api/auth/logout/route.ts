@@ -6,7 +6,7 @@ export async function POST() {
 
   cookieStore.delete("token")
   cookieStore.delete("refresh")
-  cookieStore.delete("role")
+  cookieStore.delete("tipo")
 
   return NextResponse.json({ ok: true })
 }

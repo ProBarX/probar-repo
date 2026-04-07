@@ -6,10 +6,10 @@ class CustomTokenSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        token['role'] = user.role
+        token['tipo'] = user.tipo
         return token
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        data['role'] = self.user.role
+        data['tipo'] = self.user.tipo
         return data

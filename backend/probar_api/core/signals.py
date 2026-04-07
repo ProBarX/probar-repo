@@ -4,5 +4,5 @@ from core.models import User, Cliente
 
 @receiver(post_save, sender=User)
 def create_cliente(sender, instance, created, **kwargs):
-    if created and instance.role == "cliente":
+    if created and instance.tipo == "cliente":
         Cliente.objects.create(user=instance)

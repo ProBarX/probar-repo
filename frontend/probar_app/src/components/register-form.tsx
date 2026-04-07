@@ -10,7 +10,7 @@ export function RegisterForm() {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
 
-  const [role, setRole] = useState("")
+  const [tipo, setTipo] = useState("")
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -18,7 +18,7 @@ export function RegisterForm() {
 
   async function handleRegister() {
     try {
-      if (!role) {
+      if (!tipo) {
         alert("Selecione o tipo de conta")
         return
       }
@@ -28,14 +28,14 @@ export function RegisterForm() {
         return
       }
 
-      await createUser({ name, email, password, role })
+      await createUser({ name, email, password, tipo })
 
       alert("Usuário criado com sucesso!")
       setName("")
       setEmail("")
       setPassword("")
       setConfirmPassword("")
-      setRole("")
+      setTipo("")
 
       router.push("/login")
     } catch (error) {
@@ -57,15 +57,15 @@ export function RegisterForm() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setRole("cliente")}
-              className={`flex-1 border rounded-lg p-2 transition ${role === "cliente" ? "border-[#FFC105] bg-yellow-50" : "border-gray-300"}`}
+              onClick={() => setTipo("cliente")}
+              className={`flex-1 border rounded-lg p-2 transition ${tipo === "cliente" ? "border-[#FFC105] bg-yellow-50" : "border-gray-300"}`}
             >
               Cliente
             </button>
             <button
               type="button"
-              onClick={() => setRole("bartender")}
-              className={`flex-1 border rounded-lg p-2 transition ${role === "bartender" ? "border-[#FFC105] bg-yellow-50" : "border-gray-300"}`}
+              onClick={() => setTipo("bartender")}
+              className={`flex-1 border rounded-lg p-2 transition ${tipo === "bartender" ? "border-[#FFC105] bg-yellow-50" : "border-gray-300"}`}
             >
               Bartender
             </button>
