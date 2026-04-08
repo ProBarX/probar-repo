@@ -92,6 +92,23 @@ def bartender_profile_path(instance, filename):
     return os.path.join('perfil_bartenders', str(instance.user.id), filename)
 
 
+class Drink(BaseModel):
+    """Modelo para armazenar drinks disponíveis"""
+    nome = models.CharField(max_length=100)
+    foto = models.ImageField(
+        upload_to='drinks/',
+        null=True,
+        blank=True
+    )
+    
+    class Meta:
+        verbose_name = "Drink"
+        verbose_name_plural = "Drinks"
+    
+    def __str__(self):
+        return self.nome
+
+
 class Bartender(BaseModel):
 
     ESPECIALIDADE_CHOICES = [
@@ -125,15 +142,38 @@ class Bartender(BaseModel):
         blank=True
     )
 
+    valor_hora = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Valor cobrado por hora de serviço"
+    )
+
     especialidades = models.CharField(
         max_length=50, choices=ESPECIALIDADE_CHOICES,
         blank=True
+    )
+
+    drinks = models.ManyToManyField(
+        Drink,
+        blank=True,
+        related_name='bartenders',
+        help_text="Selecione até 6 drinks que você oferece"
     )
 
     cep = models.CharField(max_length=9, blank=True)
     rua = models.CharField(max_length=255, blank=True)
     bairro = models.CharField(max_length=255, blank=True)
     numero = models.CharField(max_length=20, blank=True)
+
+    def clean(self):
+        """Validar que não há mais de 6 drinks selecionados"""
+        if self.pk:  # Apenas validar se o bartender já foi salvo (has pk)
+            if self.drinks.count() > 6:
+                raise ValidationError(
+                    "Um bartender pode ter no máximo 6 drinks selecionados."
+                )
 
     def __str__(self):
         return f"Bartender: {self.user.email}"

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender
+from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender, Drink
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -124,9 +124,28 @@ class ClienteSerializer(serializers.ModelSerializer):
         return instance
     
 
+class DrinkSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Drink
+        fields = [
+            "id",
+            "nome",
+            "foto",
+            "created_at",
+        ]
+
+
 class BartenderSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     nome = serializers.CharField(source="user.name")
+    drinks = DrinkSerializer(many=True, read_only=True)
+    drinks_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Drink.objects.all(),
+        write_only=True,
+        required=False,
+        many=True,
+        source="drinks"
+    )
 
     class Meta:
         model = Bartender
@@ -137,13 +156,25 @@ class BartenderSerializer(serializers.ModelSerializer):
             "foto_perfil",
             "anos_experiencia",
             "descricao_profissional",
+            "valor_hora",
             "especialidades",
+            "drinks",
+            "drinks_ids",
             "cep",
             "rua",
             "bairro",
             "numero",
             "created_at",
         ]
+
+    def validate_drinks_ids(self, value):
+        """Validar que não há mais de 6 drinks"""
+        if len(value) > 6:
+            raise serializers.ValidationError(
+                "Um bartender pode ter no máximo 6 drinks selecionados."
+            )
+        
+        return value
 
     def update(self, instance, validated_data):
         user_data = validated_data.pop("user", {})
@@ -157,7 +188,6 @@ class BartenderSerializer(serializers.ModelSerializer):
             instance.user.save()
 
         return instance
-
 
 
 class EventoSerializer(serializers.ModelSerializer):
