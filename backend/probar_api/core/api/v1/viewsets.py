@@ -62,11 +62,6 @@ class ClienteViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
-    
-
-class DrinkViewSet(viewsets.ModelViewSet):
-    queryset = Drink.objects.all()
-    serializer_class = DrinkSerializer
 
 
 class BartenderViewSet(viewsets.ModelViewSet):
@@ -86,6 +81,23 @@ class BartenderViewSet(viewsets.ModelViewSet):
         bartender = Bartender.objects.get(user=request.user)
         serializer = self.get_serializer(bartender)
         return Response(serializer.data)
+
+
+class DrinkViewSet(viewsets.ModelViewSet):
+    serializer_class = DrinkSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.is_staff:
+            return Drink.objects.all()
+
+        return Drink.objects.filter(bartender__user=user)
+    
+    def perform_create(self, serializer):
+        bartender = Bartender.objects.get(user=self.request.user)
+        serializer.save(bartender=bartender)
 
 
 class EventoViewSet(viewsets.ModelViewSet):
