@@ -7,6 +7,8 @@ from .managers import CustomUserManager
 import uuid
 import os
 from django.core.exceptions import ValidationError
+from core.enums import TipoUsuario, Especialidade, TipoTermo, StatusEvento
+
 
 # Base para Soft Delete e controle de datas
 class BaseModel(models.Model):
@@ -36,12 +38,9 @@ class BaseModel(models.Model):
 
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     """Custom user model que usa email como identificador único."""
-    TIPO_CHOICES = [
-        ('cliente', 'Cliente'),
-        ('bartender', 'Bartender'),
-    ]
+    
     name = models.CharField(_('nome'), max_length=100, blank=True)
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='cliente')
+    tipo = models.CharField(max_length=20, choices=TipoUsuario, default=TipoUsuario.CLIENTE)
     email = models.EmailField(_('email address'), unique=True)
     first_name = models.CharField(_('first name'), max_length=150, blank=True)
     last_name = models.CharField(_('last name'), max_length=150, blank=True)
@@ -65,7 +64,12 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
 def cliente_profile_path(instance, filename):
     ext = filename.split('.')[-1] 
     filename = f'{uuid.uuid4()}.{ext}'
-    return os.path.join('perfil_clientes', str(instance.user.id), filename)
+    return os.path.join(
+        'clientes',
+        str(instance.user.id),  
+        'foto_perfil',
+        filename
+    )
 
 class Cliente(BaseModel):
     user = models.OneToOneField(
@@ -90,35 +94,15 @@ class Cliente(BaseModel):
 def bartender_profile_path(instance, filename):
     ext = filename.split('.')[-1]
     filename = f'{uuid.uuid4()}.{ext}'
-    return os.path.join('perfil_bartenders', str(instance.user.id), filename)
-
-
-class Drink(BaseModel):
-    """Modelo para armazenar drinks disponíveis"""
-    nome = models.CharField(max_length=100)
-    foto = models.ImageField(
-        upload_to='drinks/',
-        null=True,
-        blank=True
+    return os.path.join(
+        'bartenders',
+        str(instance.user.id),  
+        'foto_perfil',
+        filename
     )
-    
-    class Meta:
-        verbose_name = "Drink"
-        verbose_name_plural = "Drinks"
-    
-    def __str__(self):
-        return self.nome
 
 
 class Bartender(BaseModel):
-
-    ESPECIALIDADE_CHOICES = [
-        ('showman', 'Showman'),
-        ('mixologista', 'Mixologista'),
-        ('tradicional', 'Tradicional'),
-        ('night_club', 'Night Club'),
-    ]
-
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -152,15 +136,8 @@ class Bartender(BaseModel):
     )
 
     especialidades = models.CharField(
-        max_length=50, choices=ESPECIALIDADE_CHOICES,
+        max_length=50, choices=Especialidade.choices,
         blank=True
-    )
-
-    drinks = models.ManyToManyField(
-        Drink,
-        blank=True,
-        related_name='bartenders',
-        help_text="Selecione até 6 drinks que você oferece"
     )
 
     cep = models.CharField(max_length=9, blank=True)
@@ -168,26 +145,61 @@ class Bartender(BaseModel):
     bairro = models.CharField(max_length=255, blank=True)
     numero = models.CharField(max_length=20, blank=True)
 
-    def clean(self):
-        """Validar que não há mais de 6 drinks selecionados"""
-        if self.pk:  # Apenas validar se o bartender já foi salvo (has pk)
-            if self.drinks.count() > 6:
-                raise ValidationError(
-                    "Um bartender pode ter no máximo 6 drinks selecionados."
-                )
-
     def __str__(self):
         return f"Bartender: {self.user.email}"
+    
+
+def drink_image_path(instance, filename):
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+
+    return os.path.join(
+        'bartenders',
+        str(instance.bartender.user.id),  
+        'drinks',
+        filename
+    )
+
+
+class Drink(BaseModel):
+    """Modelo para armazenar drinks disponíveis"""
+    bartender = models.ForeignKey(
+        'Bartender',
+        on_delete=models.CASCADE,
+        related_name='drinks'
+    )
+    nome = models.CharField(max_length=100)
+    foto = models.ImageField(
+        upload_to=drink_image_path,
+        null=True,
+        blank=True 
+    )
+    
+    class Meta:
+        verbose_name = "Drink"
+        verbose_name_plural = "Drinks"
+
+    def clean(self):
+        if self.bartender:
+            drinks_qs = self.bartender.drinks.all()
+
+            if self.pk:
+                drinks_qs = drinks_qs.exclude(pk=self.pk)
+
+            if drinks_qs.count() >= 6:
+                raise ValidationError(
+                "Este bartender já possui o máximo de 6 drinks."
+                )
+    
+    
+    def __str__(self):
+        return self.nome
 
 
 class Termos(BaseModel):
-    TIPO_CHOICES = [
-        ('cliente', 'Cliente'),
-        ('bartender', 'Bartender'),
-    ]
     conteudo = models.TextField()
     versao = models.CharField(max_length=10)
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    tipo = models.CharField(max_length=20, choices=TipoTermo.choices)
     esta_ativo = models.BooleanField(default=True)
 
     class Meta:
@@ -217,13 +229,6 @@ class AceiteTermos(BaseModel):
 
 
 class Evento(BaseModel):
-    status_choices = [
-        ('em_andamento', 'Em Andamento'),
-        ('confirmado', 'Confirmado'),
-        ('finalizado', 'Finalizado'),
-        ('cancelado', 'Cancelado'),
-    ]
-
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='eventos')
     nome = models.CharField(max_length=255)
     data = models.DateField()
@@ -235,7 +240,7 @@ class Evento(BaseModel):
     complemento = models.CharField(max_length=255, blank=True)
     quantidade_convidados = models.PositiveIntegerField()
     descricao_evento = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=status_choices, default='em_andamento')
+    status = models.CharField(max_length=20, choices=StatusEvento.choices, default=StatusEvento.EM_ANDAMENTO)
 
     class Meta:
         verbose_name = "Evento"
