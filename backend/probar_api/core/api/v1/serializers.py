@@ -131,7 +131,7 @@ class DrinkSerializer(serializers.ModelSerializer):
             "id",
             "nome",
             "foto",
-            "created_at",
+            "criado_em"
         ]
 
 
