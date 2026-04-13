@@ -64,7 +64,12 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
 def cliente_profile_path(instance, filename):
     ext = filename.split('.')[-1] 
     filename = f'{uuid.uuid4()}.{ext}'
-    return os.path.join('perfil_clientes', str(instance.user.id), filename)
+    return os.path.join(
+        'clientes',
+        str(instance.user.id),  
+        'foto_perfil',
+        filename
+    )
 
 class Cliente(BaseModel):
     user = models.OneToOneField(
@@ -89,24 +94,12 @@ class Cliente(BaseModel):
 def bartender_profile_path(instance, filename):
     ext = filename.split('.')[-1]
     filename = f'{uuid.uuid4()}.{ext}'
-    return os.path.join('perfil_bartenders', str(instance.user.id), filename)
-
-
-class Drink(BaseModel):
-    """Modelo para armazenar drinks disponíveis"""
-    nome = models.CharField(max_length=100)
-    foto = models.ImageField(
-        upload_to='drinks/',
-        null=True,
-        blank=True
+    return os.path.join(
+        'bartenders',
+        str(instance.user.id),  
+        'foto_perfil',
+        filename
     )
-    
-    class Meta:
-        verbose_name = "Drink"
-        verbose_name_plural = "Drinks"
-    
-    def __str__(self):
-        return self.nome
 
 
 class Bartender(BaseModel):
@@ -147,28 +140,60 @@ class Bartender(BaseModel):
         blank=True
     )
 
-    drinks = models.ManyToManyField(
-        Drink,
-        blank=True,
-        related_name='bartenders',
-        help_text="Selecione até 6 drinks que você oferece"
-    )
-
     cep = models.CharField(max_length=9, blank=True)
     rua = models.CharField(max_length=255, blank=True)
     bairro = models.CharField(max_length=255, blank=True)
     numero = models.CharField(max_length=20, blank=True)
 
-    def clean(self):
-        """Validar que não há mais de 6 drinks selecionados"""
-        if self.pk:  # Apenas validar se o bartender já foi salvo (has pk)
-            if self.drinks.count() > 6:
-                raise ValidationError(
-                    "Um bartender pode ter no máximo 6 drinks selecionados."
-                )
-
     def __str__(self):
         return f"Bartender: {self.user.email}"
+    
+
+def drink_image_path(instance, filename):
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+
+    return os.path.join(
+        'bartenders',
+        str(instance.bartender.user.id),  
+        'drinks',
+        filename
+    )
+
+
+class Drink(BaseModel):
+    """Modelo para armazenar drinks disponíveis"""
+    bartender = models.ForeignKey(
+        'Bartender',
+        on_delete=models.CASCADE,
+        related_name='drinks'
+    )
+    nome = models.CharField(max_length=100)
+    foto = models.ImageField(
+        upload_to=drink_image_path,
+        null=True,
+        blank=True 
+    )
+    
+    class Meta:
+        verbose_name = "Drink"
+        verbose_name_plural = "Drinks"
+
+    def clean(self):
+        if self.bartender:
+            drinks_qs = self.bartender.drinks.all()
+
+            if self.pk:
+                drinks_qs = drinks_qs.exclude(pk=self.pk)
+
+            if drinks_qs.count() >= 6:
+                raise ValidationError(
+                "Este bartender já possui o máximo de 6 drinks."
+                )
+    
+    
+    def __str__(self):
+        return self.nome
 
 
 class Termos(BaseModel):
