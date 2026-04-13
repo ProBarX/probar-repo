@@ -7,6 +7,8 @@ from .managers import CustomUserManager
 import uuid
 import os
 from django.core.exceptions import ValidationError
+from core.enums import TipoUsuario, Especialidade, TipoTermo, StatusEvento
+
 
 # Base para Soft Delete e controle de datas
 class BaseModel(models.Model):
@@ -36,12 +38,9 @@ class BaseModel(models.Model):
 
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     """Custom user model que usa email como identificador único."""
-    TIPO_CHOICES = [
-        ('cliente', 'Cliente'),
-        ('bartender', 'Bartender'),
-    ]
+    
     name = models.CharField(_('nome'), max_length=100, blank=True)
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='cliente')
+    tipo = models.CharField(max_length=20, choices=TipoUsuario, default=TipoUsuario.CLIENTE)
     email = models.EmailField(_('email address'), unique=True)
     first_name = models.CharField(_('first name'), max_length=150, blank=True)
     last_name = models.CharField(_('last name'), max_length=150, blank=True)
@@ -111,14 +110,6 @@ class Drink(BaseModel):
 
 
 class Bartender(BaseModel):
-
-    ESPECIALIDADE_CHOICES = [
-        ('showman', 'Showman'),
-        ('mixologista', 'Mixologista'),
-        ('tradicional', 'Tradicional'),
-        ('night_club', 'Night Club'),
-    ]
-
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -152,7 +143,7 @@ class Bartender(BaseModel):
     )
 
     especialidades = models.CharField(
-        max_length=50, choices=ESPECIALIDADE_CHOICES,
+        max_length=50, choices=Especialidade.choices,
         blank=True
     )
 
@@ -181,13 +172,9 @@ class Bartender(BaseModel):
 
 
 class Termos(BaseModel):
-    TIPO_CHOICES = [
-        ('cliente', 'Cliente'),
-        ('bartender', 'Bartender'),
-    ]
     conteudo = models.TextField()
     versao = models.CharField(max_length=10)
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    tipo = models.CharField(max_length=20, choices=TipoTermo.choices)
     esta_ativo = models.BooleanField(default=True)
 
     class Meta:
@@ -217,13 +204,6 @@ class AceiteTermos(BaseModel):
 
 
 class Evento(BaseModel):
-    status_choices = [
-        ('em_andamento', 'Em Andamento'),
-        ('confirmado', 'Confirmado'),
-        ('finalizado', 'Finalizado'),
-        ('cancelado', 'Cancelado'),
-    ]
-
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='eventos')
     nome = models.CharField(max_length=255)
     data = models.DateField()
@@ -235,7 +215,7 @@ class Evento(BaseModel):
     complemento = models.CharField(max_length=255, blank=True)
     quantidade_convidados = models.PositiveIntegerField()
     descricao_evento = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=status_choices, default='em_andamento')
+    status = models.CharField(max_length=20, choices=StatusEvento.choices, default=StatusEvento.EM_ANDAMENTO)
 
     class Meta:
         verbose_name = "Evento"
