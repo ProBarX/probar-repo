@@ -5,8 +5,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from rest_framework_simplejwt.views import TokenRefreshView
-from core.views import CustomTokenView
+from core.views import CustomTokenView, CustomTokenRefreshView
 from .router.api import api_urls
 from django.conf import settings
 from django.conf.urls.static import static
@@ -23,11 +22,11 @@ urlpatterns = [
     path(
         'api/token/',
         CustomTokenView.as_view(),
-        name='token_obtain_pair'  
+        name='token_obtain_pair'
     ),
     path(
         'api/token/refresh/',
-        TokenRefreshView.as_view(),
+        CustomTokenRefreshView.as_view(),
         name='token_refresh'
     ),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
