@@ -63,6 +63,34 @@ SIMPLE_JWT = {
 }
 
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'API ProBar',
+    'DESCRIPTION': 'Documentação da API oficial do ProBar - Sistema para intermediar clientes e bartenders.',
+    'VERSION': '1.0.0',
+
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'displayOperationId': False,
+        'defaultModelsExpandDepth': -1,  
+        'defaultModelExpandDepth': 2,
+        'persistAuthorization': True,
+    },
+
+    'SWAGGER_UI_DIST': 'SIDECAR',  
+
+    'SORT_TAGS': False,
+    'TAGS': [
+        {'name': 'Autenticação'},
+        {'name': 'Usuários'},
+        {'name': 'Clientes'},
+        {'name': 'Bartenders'},
+        {'name': 'Drinks'},
+        {'name': 'Eventos'},
+        {'name': 'Termos'},
+        {'name': 'Aceite Termos'},
+    ],
+}
+
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS')
 
 
@@ -132,7 +160,6 @@ TIME_ZONE = 'America/Recife'
 USE_I18N = True
 
 USE_TZ = True
-
 
 
 STATIC_URL = "/static/"
