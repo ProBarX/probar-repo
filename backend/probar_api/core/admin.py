@@ -3,10 +3,32 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 from .models import User, Cliente, Termos, AceiteTermos, Evento, Bartender, Drink
 
-class CustomUserAdmin(UserAdmin):
+
+class SoftDeleteAdmin(admin.ModelAdmin):
+
+    list_filter = ('esta_deletado',)  # filtro para mostrar itens deletados ou não
+
+    def delete_model(self, request, obj):
+        obj.delete()
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            obj.delete()
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+
+        # mostra somente registros não deletados por padrão
+        if not request.GET.get('esta_deletado'):
+            return qs.filter(esta_deletado=False)
+
+        return qs
+
+
+class CustomUserAdmin(SoftDeleteAdmin, UserAdmin):
     model = User
     list_display = ('id', 'name', 'email', 'tipo', 'is_staff', 'is_active')
-    list_filter = ('tipo', 'is_staff', 'is_active')
+    list_filter = ('tipo', 'is_staff', 'is_active', 'esta_deletado')
     search_fields = ('email', 'first_name', 'last_name', 'name')
     ordering = ('id',)
     fieldsets = (
@@ -22,11 +44,12 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
 
+
 admin.site.register(User, CustomUserAdmin)
 
-@admin.register(Cliente)
-class ClienteAdmin(admin.ModelAdmin):
 
+@admin.register(Cliente)
+class ClienteAdmin(SoftDeleteAdmin):
     list_display = (
         'user_id',
         'user',
@@ -44,8 +67,7 @@ class DrinkInline(admin.TabularInline):
 
 
 @admin.register(Bartender)
-class BartenderAdmin(admin.ModelAdmin):
-      
+class BartenderAdmin(SoftDeleteAdmin):
     list_display = (
         'user_id',
         'user',
@@ -65,19 +87,19 @@ class BartenderAdmin(admin.ModelAdmin):
 
 
 @admin.register(Termos)
-class TermosAdmin(admin.ModelAdmin):
+class TermosAdmin(SoftDeleteAdmin):
     list_display = ('id', 'versao', 'tipo', 'conteudo')
     search_fields = ('versao', 'tipo', 'conteudo')
 
 
 @admin.register(AceiteTermos)
-class AceiteTermosAdmin(admin.ModelAdmin):
+class AceiteTermosAdmin(SoftDeleteAdmin):
     list_display = ('id', 'termo', 'user', 'aceito_em')
     search_fields = ('termo__versao', 'user__email')
-    
+
 
 @admin.register(Evento)
-class EventoAdmin(admin.ModelAdmin):
+class EventoAdmin(SoftDeleteAdmin):
     list_display = (
         'id',
         'nome',
