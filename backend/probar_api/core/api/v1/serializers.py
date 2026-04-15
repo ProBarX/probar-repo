@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender, Drink
 
+
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 

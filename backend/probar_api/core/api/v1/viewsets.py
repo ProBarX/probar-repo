@@ -4,8 +4,10 @@ from .serializers import UserSerializer, TermosSerializer, AceiteTermosSerialize
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
+    
 
-
+@extend_schema(tags=["Usuários"])
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -25,11 +27,13 @@ class UserViewSet(viewsets.ModelViewSet):
         return User.objects.filter(id=user.id)
 
 
+@extend_schema(tags=["Termos"])
 class TermosViewSet(viewsets.ModelViewSet):
     queryset = Termos.objects.all()
     serializer_class = TermosSerializer
 
 
+@extend_schema(tags=["Aceite Termos"])
 class AceiteTermosViewSet(viewsets.ModelViewSet):
     serializer_class = AceiteTermosSerializer
     permission_classes = [IsAuthenticated]
@@ -38,6 +42,7 @@ class AceiteTermosViewSet(viewsets.ModelViewSet):
         return AceiteTermos.objects.filter(user=self.request.user)
 
 
+@extend_schema(tags=["Clientes"])
 class ClienteViewSet(viewsets.ModelViewSet):
     serializer_class = ClienteSerializer
     permission_classes = [IsAuthenticated]
@@ -50,6 +55,15 @@ class ClienteViewSet(viewsets.ModelViewSet):
 
         return Cliente.objects.filter(user=user)
 
+
+    @extend_schema(
+        summary="Obter dados do cliente logado",
+        methods=["GET"]
+    )
+    @extend_schema(
+        summary="Atualizar dados do cliente logado",
+        methods=["PATCH"]
+    )
     @action(detail=False, methods=['get', 'patch'])
     def me(self, request):
         cliente = Cliente.objects.get(user=request.user)
@@ -64,6 +78,7 @@ class ClienteViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+@extend_schema(tags=["Bartenders"])
 class BartenderViewSet(viewsets.ModelViewSet):
     serializer_class = BartenderSerializer
     permission_classes = [IsAuthenticated]
@@ -76,13 +91,35 @@ class BartenderViewSet(viewsets.ModelViewSet):
 
         return Bartender.objects.filter(user=user)
     
-    @action(detail=False, methods=['get'])
+
+    @extend_schema(
+        summary="Obter dados do bartender logado",
+        methods=["GET"]
+    )
+    @extend_schema(
+        summary="Atualizar dados do bartender logado",
+        methods=["PATCH"]
+    )
+    @action(detail=False, methods=['get', 'patch'])
     def me(self, request):
         bartender = Bartender.objects.get(user=request.user)
-        serializer = self.get_serializer(bartender)
+
+        if request.method == 'GET':
+            serializer = self.get_serializer(bartender)
+            return Response(serializer.data)
+
+        serializer = self.get_serializer(
+            bartender,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
         return Response(serializer.data)
 
 
+@extend_schema(tags=["Drinks"])
 class DrinkViewSet(viewsets.ModelViewSet):
     serializer_class = DrinkSerializer
     permission_classes = [IsAuthenticated]
@@ -100,6 +137,7 @@ class DrinkViewSet(viewsets.ModelViewSet):
         serializer.save(bartender=bartender)
 
 
+@extend_schema(tags=["Eventos"])
 class EventoViewSet(viewsets.ModelViewSet):
     queryset = Evento.objects.select_related('cliente').all()
     serializer_class = EventoSerializer
