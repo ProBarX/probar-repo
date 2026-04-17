@@ -42,21 +42,47 @@ export function LoginForm() {
       })
 
       if (data.tipo === "cliente") {
-        // verifica se cadastro está completo
-        const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/clientes/`, {
+        const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/clientes/me/`, {
           headers: { Authorization: `Bearer ${data.access}` },
         })
+
+        if (!clienteRes.ok) {
+          router.push("/client/home")
+          return
+        }
+
         const cliente = await clienteRes.json()
 
         if (!cliente.data_nascimento) {
-          router.push("/client/complete")
+          router.push("/client/home")
         } else {
           router.push("/client/home")
         }
-      } else {
-        router.push("/bartender/home")
+        return
       }
 
+      if (data.tipo === "bartender") {
+        const bartenderRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/bartenders/me/`, {
+          headers: { Authorization: `Bearer ${data.access}` },
+        })
+
+        if (!bartenderRes.ok) {
+          router.push("/bartender/complete")
+          return
+        }
+
+        const bartender = await bartenderRes.json()
+        const needsComplete = !bartender.data_nascimento || !bartender.anos_experiencia || !bartender.descricao_profissional || !bartender.cep || !bartender.rua || !bartender.bairro || !bartender.numero
+
+        if (needsComplete) {
+          router.push("/bartender/complete")
+        } else {
+          router.push("/bartender/home")
+        }
+        return
+      }
+
+      router.push("/login")
     } catch {
       setError("Erro ao conectar com o servidor.")
     } finally {
