@@ -91,6 +91,10 @@ class BartenderViewSet(viewsets.ModelViewSet):
 
         return Bartender.objects.filter(user=user)
     
+    def get_permissions(self):
+        if self.action == 'list':
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     @extend_schema(
         summary="Obter dados do bartender logado",
