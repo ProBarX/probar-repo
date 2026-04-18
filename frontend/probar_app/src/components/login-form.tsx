@@ -168,7 +168,7 @@ export function LoginForm() {
     <div className="w-full max-w-md space-y-8">
       <div className="space-y-5">
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium text-foreground">
+          <label htmlFor="email" className="text-sm font-medium text-gray-700">
             Email
           </label>
           <input
@@ -182,7 +182,7 @@ export function LoginForm() {
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="password" className="text-sm font-medium text-foreground">
+          <label htmlFor="password" className="text-sm font-medium text-gray-700">
             Senha
           </label>
           <div className="relative">
@@ -205,7 +205,7 @@ export function LoginForm() {
           </div>
 
           <div className="text-right">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href="#" className="text-xs font-semibold text-gray-900 hover:underline">
               Esqueceu a senha?
             </Link>
           </div>
@@ -218,7 +218,7 @@ export function LoginForm() {
         <button
           onClick={handleLogin}
           disabled={loading}
-          className="flex h-12 w-full items-center justify-center rounded-lg bg-[#FFC105] hover:bg-yellow-500 text-black font-semibold transition-colors disabled:opacity-60"
+          className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"
         >
           {loading ? "Entrando..." : "Login"}
         </button>

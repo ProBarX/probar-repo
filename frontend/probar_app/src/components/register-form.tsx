@@ -10,6 +10,7 @@ import { createUser } from "@/services/user"
 export function RegisterForm() {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const [tipo, setTipo] = useState("")
   const [name, setName] = useState("")
@@ -139,14 +140,24 @@ export function RegisterForm() {
         {/* Confirmar Senha */}
         <div className="space-y-1.5">
           <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">Confirmar Senha</label>
-          <input
-            id="confirmPassword"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Confirme sua senha"
-            className={inputClass}
-          />
+          <div className="relative">
+            <input
+              id="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirme sua senha"
+              className={`${inputClass} pr-10`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+              aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}
+            >
+              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         {/* Termos */}
