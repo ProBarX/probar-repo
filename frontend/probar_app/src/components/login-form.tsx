@@ -54,7 +54,7 @@ export function LoginForm() {
         const cliente = await clienteRes.json()
 
         if (!cliente.data_nascimento) {
-          router.push("/client/home")
+          router.push("/client/complete")
         } else {
           router.push("/client/home")
         }
