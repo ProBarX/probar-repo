@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { Eye, EyeOff, User, Wine } from "lucide-react"
+import { Eye, EyeOff } from "lucide-react"
+import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
 import { createUser } from "@/services/user"
 
@@ -69,37 +70,21 @@ export function RegisterForm() {
         {/* Tipo de conta */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-gray-700">Tipo de conta</label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setTipo("cliente")}
-              className={`flex-1 flex items-center gap-2 border rounded-lg px-3 py-2.5 text-sm transition ${
-                tipo === "cliente"
-                  ? "border-[#FFC105] bg-yellow-50 text-gray-900"
-                  : "border-gray-200 text-gray-600 hover:border-gray-300"
-              }`}
-            >
-              <User className="h-4 w-4 text-[#FFC105]" />
-              <div className="text-left">
-                <p className="font-medium text-xs">Cliente</p>
-                <p className="text-[10px] text-gray-400">Contratar bartenders</p>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setTipo("bartender")}
-              className={`flex-1 flex items-center gap-2 border rounded-lg px-3 py-2.5 text-sm transition ${
-                tipo === "bartender"
-                  ? "border-[#FFC105] bg-yellow-50 text-gray-900"
-                  : "border-gray-200 text-gray-600 hover:border-gray-300"
-              }`}
-            >
-              <Wine className="h-4 w-4 text-[#FFC105]" />
-              <div className="text-left">
-                <p className="font-medium text-xs">Bartender</p>
-                <p className="text-[10px] text-gray-400">Oferecer serviços</p>
-              </div>
-            </button>
+          <div className="flex flex-col md:flex-row gap-2">
+            <RoleSelector
+              role="cliente"
+              title="Cliente"
+              subtitle="Contratar bartenders"
+              selected={tipo === "cliente"}
+              onSelect={(r) => setTipo(r)}
+            />
+            <RoleSelector
+              role="bartender"
+              title="Bartender"
+              subtitle="Oferecer serviços"
+              selected={tipo === "bartender"}
+              onSelect={(r) => setTipo(r)}
+            />
           </div>
         </div>
 

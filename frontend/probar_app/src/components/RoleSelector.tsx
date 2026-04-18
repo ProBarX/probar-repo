@@ -14,42 +14,27 @@ interface Props {
 }
 
 export function RoleSelector({ role, title, subtitle, selected = false, disabled = false, onSelect }: Props) {
-  const base = "border rounded-xl p-5 cursor-pointer transition-transform duration-150 ease-in-out"
-  const selectedClasses = selected ? "border-2 border-[#FFC105] bg-[#FFFBF0] shadow-md scale-[1.01]" : "border-gray-200 bg-white hover:shadow-md hover:-translate-y-0.5"
+  const base = "w-full md:flex-1 flex items-center gap-3 border rounded-xl px-4 py-3 text-sm transition"
+  const selectedClasses = selected ? "border-[#FFC105] bg-yellow-50 text-gray-900" : "border-gray-200 text-gray-600 hover:border-gray-300"
   const disabledClasses = disabled ? "opacity-60 cursor-not-allowed" : ""
   const classes = `${base} ${selectedClasses} ${disabledClasses}`
 
-  const iconColor = selected ? "text-[#FFC105]" : "text-gray-400"
-
-  const getIcon = () => {
-    const iconName = role === "cliente" ? "User" : "Cocktail"
-    // dynamic resolution with fallbacks to avoid build-time missing export errors
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const IconComp = (Icons as any)[iconName] || (Icons as any)["User"]
-    return IconComp
-  }
-
-  const IconComp = getIcon()
+  const iconName = role === "cliente" ? "User" : "Wine"
+  const IconComp = (Icons as any)[iconName] || (Icons as any)["User"]
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       onClick={() => !disabled && onSelect(role)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') !disabled && onSelect(role) }}
       className={classes}
     >
-      <div className="flex items-center gap-4">
-        <div className="w-14 h-14 flex items-center justify-center rounded-lg bg-gray-50">
-          {IconComp ? <IconComp className={`w-6 h-6 ${iconColor}`} /> : null}
-        </div>
-        <div className="text-left">
-          <div className="font-semibold text-lg">{title}</div>
-          {subtitle && <div className="text-sm text-gray-500">{subtitle}</div>}
-        </div>
+      <IconComp className="h-5 w-5 text-[#FFC105] flex-shrink-0" />
+      <div className="text-left">
+        <p className="font-medium text-sm md:whitespace-nowrap">{title}</p>
+        {subtitle && <p className="text-xs text-gray-400 md:whitespace-nowrap">{subtitle}</p>}
       </div>
-    </div>
+    </button>
   )
 }
 
