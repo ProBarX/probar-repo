@@ -62,6 +62,8 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+# Client ID usado para validação dos id_tokens do Google (opcional, mas recomendado)
+GOOGLE_CLIENT_ID = env('GOOGLE_CLIENT_ID', default=None)
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'API ProBar',
