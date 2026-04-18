@@ -44,16 +44,16 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
         ‹ Voltar
       </button>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "28px" }}>
         {/* Coluna esquerda */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           {/* Foto do bartender */}
           <img
-            src={bartender.foto_perfil ?? "/52063af3-9940-4248-bf16-f32b0b4f68b0.png"}
+            src={bartender.foto_perfil ?? "/bartender-placeholder.jpg"}
             alt={bartender.nome}
             style={{
               width: "100%",
-              height: "260px",
+              height: "360px",
               objectFit: "cover",
               borderRadius: "12px",
             }}
@@ -64,7 +64,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             border: "1px solid #eee",
             borderRadius: "12px",
             padding: "16px",
-            minHeight: "140px",
+            minHeight: "200px",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -91,12 +91,12 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               <img
                 src={currentDrink.imagem}
                 alt={currentDrink.nome}
-                style={{ height: "80px", objectFit: "contain", marginBottom: "8px" }}
+                style={{ height: "130px", objectFit: "contain", marginBottom: "8px" }}
               />
             ) : (
               <div style={{
-                width: "60px",
-                height: "60px",
+                width: "90px",
+                height: "90px",
                 background: "#f5f5f5",
                 borderRadius: "8px",
                 marginBottom: "8px",
