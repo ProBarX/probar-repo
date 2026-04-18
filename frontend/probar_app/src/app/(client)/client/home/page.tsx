@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { api } from "@/services/api"
 import { BannerPromo } from "@/components/client/home/BannerPromo"
 import { CategoryFilter } from "@/components/client/home/CategoryFilter"
@@ -16,6 +17,7 @@ type Bartender = {
 }
 
 export default function HomePage() {
+  const router = useRouter()
   const [bartenders, setBartenders] = useState<Bartender[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,10 +54,7 @@ export default function HomePage() {
           <p style={{ margin: 0, fontWeight: "600" }}>Patos, Paraíba ↓</p>
           <h1 style={{ margin: "4px 0 0" }}>Encontre seu Bartender</h1>
         </div>
-        <div style={{
-          position: "relative",
-          width: "280px",
-        }}>
+        <div style={{ position: "relative", width: "280px" }}>
           <svg
             style={{
               position: "absolute",
@@ -126,6 +125,8 @@ export default function HomePage() {
               price={b.valor_hora}
               rating={b.anos_experiencia}
               image={b.foto_perfil ?? "/bartender-placeholder.jpg"}
+              // Navega para /client/bartender/{email} — futuramente busca pelo email
+              onSelect={() => router.push(`/client/bartender/${encodeURIComponent(b.email)}`)}
             />
           ))}
         </div>
