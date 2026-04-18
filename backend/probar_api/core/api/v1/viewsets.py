@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
-    
+from core.enums import TipoUsuario
 
 @extend_schema(tags=["Usuários"])
 class UserViewSet(viewsets.ModelViewSet):
@@ -86,7 +86,10 @@ class BartenderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
-        if user.is_staff:
+        if not user.is_authenticated:
+            return Bartender.objects.all()
+
+        if user.is_staff or user.tipo == TipoUsuario.CLIENTE:
             return Bartender.objects.all()
 
         return Bartender.objects.filter(user=user)
