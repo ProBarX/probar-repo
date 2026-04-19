@@ -8,7 +8,7 @@ export default async function ClientLayout({ children }: { children: React.React
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       <Sidebar tipo={tipo} />
-      <main style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
+      <main style={{ backgroundColor: "#FAFAFA", flex: 1, overflowY: "auto", padding: "24px" }}>
         {children}
       </main>
     </div>

@@ -1,14 +1,23 @@
-// Futuramente esse tipo virá do seu serviço/API
+"use client"
+
+import { useState } from "react"
+import type { CSSProperties } from "react"
+import { useRouter } from "next/navigation"
+
+// Espelha exatamente os campos do BartenderSerializer
 export type BartenderDetail = {
   email: string
   nome: string
   especialidades: string
   valor_hora: number
-  rating: number
-  total_avaliacoes: number
-  descricao: string
+  anos_experiencia: number
+  descricao_profissional: string
   foto_perfil: string | null
-  drinks: { nome: string; imagem: string | null }[]
+  drinks: {
+    id: number
+    nome: string
+    foto: string | null
+  }[]
 }
 
 type Props = {
@@ -19,9 +28,13 @@ type Props = {
 export function BartenderDetailView({ bartender, onBack }: Props) {
   const [hours, setHours] = useState(4)
   const [drinkIndex, setDrinkIndex] = useState(0)
+  const [expanded, setExpanded] = useState(false)
 
-  const totalPrice = bartender.valor_hora * hours
+  const totalPrice = Number(bartender.valor_hora) * hours
   const currentDrink = bartender.drinks[drinkIndex]
+  const descricao = bartender.descricao_profissional ?? ""
+  const descricaoCurta = descricao.length > 120 ? descricao.slice(0, 120) + "..." : descricao
+  const router = useRouter()
 
   return (
     <div>
@@ -45,18 +58,15 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
       </button>
 
       <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "28px" }}>
-        {/* Coluna esquerda */}
+
+        {/* ── Coluna esquerda ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* Foto do bartender */}
+
+          {/* Foto */}
           <img
             src={bartender.foto_perfil ?? "/bartender-placeholder.jpg"}
             alt={bartender.nome}
-            style={{
-              width: "100%",
-              height: "360px",
-              objectFit: "cover",
-              borderRadius: "12px",
-            }}
+            style={{ width: "100%", height: "360px", objectFit: "cover", borderRadius: "12px" }}
           />
 
           {/* Carrossel de drinks */}
@@ -70,6 +80,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
+            backgroundColor: "#fff",
           }}>
             {bartender.drinks.length > 1 && (
               <>
@@ -87,9 +98,10 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
                 </button>
               </>
             )}
-            {currentDrink?.imagem ? (
+
+            {currentDrink?.foto ? (
               <img
-                src={currentDrink.imagem}
+                src={currentDrink.foto}
                 alt={currentDrink.nome}
                 style={{ height: "130px", objectFit: "contain", marginBottom: "8px" }}
               />
@@ -103,21 +115,41 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "#bbb",
-                fontSize: "24px",
+                fontSize: "32px",
               }}>
                 🍹
               </div>
             )}
+
             <p style={{ fontWeight: "600", margin: 0, fontSize: "14px" }}>
               {currentDrink?.nome ?? "Sem drinks cadastrados"}
             </p>
+
+            {/* Indicadores de posição */}
+            {bartender.drinks.length > 1 && (
+              <div style={{ display: "flex", gap: "4px", marginTop: "10px" }}>
+                {bartender.drinks.map((_, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      background: i === drinkIndex ? "#F5C518" : "#ddd",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setDrinkIndex(i)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Coluna direita */}
+        {/* ── Coluna direita ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* Nome e rating */}
+
+          {/* Nome e experiência */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
               <h2 style={{ margin: 0, fontSize: "26px", fontWeight: "700" }}>{bartender.nome}</h2>
@@ -135,12 +167,12 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               fontWeight: "600",
               whiteSpace: "nowrap",
             }}>
-              ⭐ {bartender.rating} ({bartender.total_avaliacoes})
+              ⭐ 4,5{/*bartender.total_avaliacoes*/}
             </span>
           </div>
 
           {/* Botão chat */}
-          <button style={{
+          <button onClick={() => router.push("/client/chat")} style={{
             display: "flex",
             alignItems: "center",
             gap: "6px",
@@ -158,17 +190,26 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
           {/* Descrição */}
           <div>
             <h3 style={{ fontSize: "16px", fontWeight: "700", margin: "0 0 6px" }}>Descrição</h3>
-            <p style={{ color: "#555", fontSize: "13px", lineHeight: "1.6", margin: 0 }}>
-              {bartender.descricao}
+            <p style={{ color: "#555", fontSize: "13px", lineHeight: "1.6", margin: "0 0 4px" }}>
+              {expanded ? descricao : descricaoCurta}
             </p>
+            {descricao.length > 120 && (
+              <span
+                onClick={() => setExpanded((e) => !e)}
+                style={{ color: "#d4860a", fontSize: "13px", cursor: "pointer" }}
+              >
+                {expanded ? "Ver menos" : "Ler mais"}
+              </span>
+            )}
           </div>
 
-          {/* Box de contratação */}
+          {/* Box contratação */}
           <div style={{
             border: "1px solid #eee",
             borderRadius: "12px",
             padding: "16px",
             marginTop: "auto",
+            backgroundColor: "#fff",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "#888", marginBottom: "12px" }}>
               <span>Hora(s)</span>
@@ -176,24 +217,14 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <button
-                  onClick={() => setHours((h) => Math.max(1, h - 1))}
-                  style={ctrlBtnStyle}
-                >
-                  −
-                </button>
+                <button onClick={() => setHours((h) => Math.max(1, h - 1))} style={ctrlBtnStyle}>−</button>
                 <span style={{ fontWeight: "600", fontSize: "16px", minWidth: "20px", textAlign: "center" }}>
                   {hours}
                 </span>
-                <button
-                  onClick={() => setHours((h) => Math.min(24, h + 1))}
-                  style={ctrlBtnStyle}
-                >
-                  +
-                </button>
+                <button onClick={() => setHours((h) => Math.min(24, h + 1))} style={ctrlBtnStyle}>+</button>
               </div>
               <span style={{ fontWeight: "700", fontSize: "18px" }}>
-                {totalPrice} R$
+                {totalPrice.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
             </div>
 
@@ -217,10 +248,6 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
     </div>
   )
 }
-
-// ---- estilos internos ----
-import { useState } from "react"
-import type { CSSProperties } from "react"
 
 const navBtnStyle: CSSProperties = {
   position: "absolute",

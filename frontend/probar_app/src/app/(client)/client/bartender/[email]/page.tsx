@@ -1,43 +1,54 @@
 "use client"
 
+import { use, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { api } from "@/services/api"
 import { BartenderDetailView, type BartenderDetail } from "@/components/client/bartender/BartenderDetailView"
 
-// ─── Mock estático ────────────────────────────────────────────────────────────
-// Futuramente: remover esse mock e buscar via api.get(`/bartenders/${params.email}`)
-const MOCK_BARTENDER: BartenderDetail = {
-  email: "fulano@probar.com",
-  nome: "Fulano",
-  especialidades: "Tradicional",
-  valor_hora: 600,
-  rating: 4.5,
-  total_avaliacoes: 180,
-  descricao:
-    "Especialista em coquetéis clássicos com mais de 8 anos de experiência. Domina técnicas tradicionais de preparo de drinks e atende eventos de todos os portes.",
-  foto_perfil: "/52063af3-9940-4248-bf16-f32b0b4f68b0.png",
-  drinks: [
-    { nome: "Caipirinha", imagem: null },
-    { nome: "Mojito", imagem: null },
-    { nome: "Negroni", imagem: null },
-  ],
-}
-// ─────────────────────────────────────────────────────────────────────────────
-
 type Props = {
-  params: { email: string }
+  params: Promise<{ email: string }>
 }
 
 export default function BartenderDetailPage({ params }: Props) {
+  const { email } = use(params)
   const router = useRouter()
+  const [bartender, setBartender] = useState<BartenderDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // TODO (quando o backend estiver pronto):
-  // const [bartender, setBartender] = useState<BartenderDetail | null>(null)
-  // useEffect(() => {
-  //   api.get<BartenderDetail>(`/bartenders/${decodeURIComponent(params.email)}/`)
-  //     .then(({ data }) => setBartender(data))
-  // }, [params.email])
+  useEffect(() => {
+    const emailDecoded = decodeURIComponent(email)
 
-  const bartender = MOCK_BARTENDER // trocar por estado quando integrar
+    api.get<BartenderDetail[] | { results: BartenderDetail[] }>("/bartenders/")
+      .then(({ data }) => {
+        const list = "results" in data ? data.results : data
+        const found = list.find((b) => b.email === emailDecoded)
+
+        if (found) {
+          setBartender(found)
+        } else {
+          setError("Bartender não encontrado.")
+        }
+      })
+      .catch(() => setError("Não foi possível carregar o bartender."))
+      .finally(() => setLoading(false))
+  }, [email])
+
+  if (loading) {
+    return (
+      <p style={{ color: "#888", textAlign: "center", padding: "60px 0" }}>
+        Carregando...
+      </p>
+    )
+  }
+
+  if (error || !bartender) {
+    return (
+      <p style={{ color: "#e53e3e", textAlign: "center", padding: "60px 0" }}>
+        {error ?? "Bartender não encontrado."}
+      </p>
+    )
+  }
 
   return (
     <BartenderDetailView

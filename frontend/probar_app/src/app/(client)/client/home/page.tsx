@@ -125,7 +125,6 @@ export default function HomePage() {
               price={b.valor_hora}
               rating={b.anos_experiencia}
               image={b.foto_perfil ?? "/bartender-placeholder.jpg"}
-              // Navega para /client/bartender/{email} — futuramente busca pelo email
               onSelect={() => router.push(`/client/bartender/${encodeURIComponent(b.email)}`)}
             />
           ))}
