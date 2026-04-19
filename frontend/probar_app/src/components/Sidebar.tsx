@@ -28,15 +28,24 @@ const navItems: Record<Role, NavItem[]> = {
   ],
 }
 
+// Mapeia o tipo (valor do backend) para o prefixo real das rotas
+const routePrefix: Record<Role, string> = {
+  cliente:   "client",
+  bartender: "bartender",
+}
+
 export function Sidebar({ tipo }: { tipo: Role }) {
   const pathname = usePathname()
   const router = useRouter()
   const items = navItems[tipo]
+  const prefix = routePrefix[tipo]
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" })
     router.push("/login")
   }
+
+  const isPerfilActive = pathname === `/${prefix}/perfil`
 
   return (
     <aside style={{
@@ -77,7 +86,6 @@ export function Sidebar({ tipo }: { tipo: Role }) {
                 fontWeight: isActive ? "600" : "400",
               }}
             >
-              {/* Ícone com fundo circular quando ativo */}
               <div style={{
                 width: "32px",
                 height: "32px",
@@ -85,7 +93,7 @@ export function Sidebar({ tipo }: { tipo: Role }) {
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
-                }}>
+              }}>
                 <item.icon size={18} color="#000" />
               </div>
               <span>{item.label}</span>
@@ -99,13 +107,14 @@ export function Sidebar({ tipo }: { tipo: Role }) {
         <div style={{ borderTop: "1px solid #A7A7A7", marginBottom: "12px" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "0 16px 24px" }}>
           <Link
-            href={`/${tipo}/perfil`}
+            href={`/${prefix}/profile`}
             style={{
               display: "flex",
               alignItems: "center",
               gap: "12px",
               textDecoration: "none",
-              color: "#444",
+              color: isPerfilActive ? "#000" : "#444",
+              fontWeight: isPerfilActive ? "600" : "400",
               padding: "6px 4px",
             }}
           >
