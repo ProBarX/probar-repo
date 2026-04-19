@@ -97,6 +97,9 @@ export function LoginForm() {
     }
   }
 
+  const inputClass =
+    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] focus:border-transparent"
+
   const redirectByRole: Record<'cliente' | 'bartender', string> = {
     cliente: '/client/complete',
     bartender: '/bartender/complete',
@@ -165,7 +168,7 @@ export function LoginForm() {
     <div className="w-full max-w-md space-y-8">
       <div className="space-y-5">
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium text-foreground">
+          <label htmlFor="email" className="text-sm font-medium text-gray-700">
             Email
           </label>
           <input
@@ -174,12 +177,12 @@ export function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="seu@email.com"
-            className="border p-2 rounded mb-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] w-full"
+            className={inputClass}
           />
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="password" className="text-sm font-medium text-foreground">
+          <label htmlFor="password" className="text-sm font-medium text-gray-700">
             Senha
           </label>
           <div className="relative">
@@ -189,20 +192,20 @@ export function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Sua senha"
-              className="border p-2 rounded mb-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] w-full pr-10"
+              className={`${inputClass} pr-10`}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
               aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
             >
-              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
 
           <div className="text-right">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href="#" className="text-xs font-semibold text-gray-900 hover:underline">
               Esqueceu a senha?
             </Link>
           </div>
@@ -215,7 +218,7 @@ export function LoginForm() {
         <button
           onClick={handleLogin}
           disabled={loading}
-          className="flex h-12 w-full items-center justify-center rounded-lg bg-[#FFC105] hover:bg-yellow-500 text-black font-semibold transition-colors disabled:opacity-60"
+          className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"
         >
           {loading ? "Entrando..." : "Login"}
         </button>
@@ -269,9 +272,9 @@ export function LoginForm() {
       {showTipoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="text-lg font-semibold mb-4 text-center">Como você irá usar o ProBar?</h3>
+            <h3 className="text-lg font-semibold mb-4 text-center">Tipo de conta</h3>
 
-            <div className="grid grid-cols-1 gap-4 mb-4">
+            <div className="flex flex-col md:flex-row gap-2 mb-4">
               <RoleSelector
                 role="cliente"
                 title="Cliente"

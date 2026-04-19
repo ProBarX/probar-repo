@@ -4,9 +4,10 @@ type BartenderCardProps = {
   price: number
   rating: number
   image: string
+  onSelect?: () => void
 }
 
-export function BartenderCard({ name, specialty, price, rating, image }: BartenderCardProps) {
+export function BartenderCard({ name, specialty, price, rating, image, onSelect }: BartenderCardProps) {
   return (
     <div style={{
       borderRadius: "12px",
@@ -37,15 +38,20 @@ export function BartenderCard({ name, specialty, price, rating, image }: Bartend
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontWeight: "600" }}>{price} R$</span>
-          <button style={{
-            backgroundColor: "#F5C518",
-            border: "none",
-            borderRadius: "50%",
-            width: "28px",
-            height: "28px",
-            fontSize: "18px",
-            cursor: "pointer",
-          }}>+</button>
+          <button
+            onClick={onSelect}
+            style={{
+              backgroundColor: "#F5C518",
+              border: "none",
+              borderRadius: "50%",
+              width: "28px",
+              height: "28px",
+              fontSize: "18px",
+              cursor: "pointer",
+            }}
+          >
+            +
+          </button>
         </div>
       </div>
     </div>

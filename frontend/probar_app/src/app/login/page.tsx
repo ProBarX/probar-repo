@@ -19,10 +19,10 @@ export default function LoginPage() {
         </div>
 
       
-        <div className="w-full md:w-1/2 p-10 flex flex-col bg-[#ffffff] text-[#000000] justify-center">
+          <div className="w-full md:w-1/2 p-10 flex flex-col bg-[#ffffff] text-[#000000] justify-center">
           <div className="mb-6">
-            <h2 className="text-3xl font-bold">Bem-vindo!</h2>
-            <p className="text-gray-600 mt-2">Entre na sua conta para continuar</p>
+            <h2 className="text-2xl font-bold">Bem-vindo!</h2>
+            <p className="text-gray-500 text-sm mt-1">Entre na sua conta para continuar</p>
           </div>
 
           <div className="w-full">

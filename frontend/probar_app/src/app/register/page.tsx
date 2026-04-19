@@ -5,8 +5,8 @@ import { kaushan } from "@/fonts"
 
 export default function RegisterPage() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="w-full max-w-3xl rounded-2xl border border-gray-200 flex overflow-hidden bg-white">
+    <main className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-5xl rounded-2xl border border-gray-200 flex overflow-hidden bg-white">
 
         <div className="hidden md:flex md:w-1/2 relative items-center justify-center bg-white overflow-hidden">
           {/* Círculo amarelo ancorado no topo, centralizado horizontalmente */}
