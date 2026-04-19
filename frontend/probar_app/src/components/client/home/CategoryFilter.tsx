@@ -1,18 +1,19 @@
 "use client"
 
-import { useState } from "react"
+const categories = ["Todos", "Tradicional", "Mixologista", "Night Club", "Showman"]
 
-const categories = ["Todos", "Tradicional", "Mixologista", "Night Club"]
+type CategoryFilterProps = {
+  active: string
+  onChange: (category: string) => void
+}
 
-export function CategoryFilter() {
-  const [active, setActive] = useState("Todos")
-
+export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
   return (
-    <div style={{ display: "flex", gap: "12px", marginBottom: "24px" }}>
+    <div style={{ display: "flex", gap: "12px", marginBottom: "24px", flexWrap: "wrap" }}>
       {categories.map((cat) => (
         <button
           key={cat}
-          onClick={() => setActive(cat)}
+          onClick={() => onChange(cat)}
           style={{
             padding: "8px 20px",
             borderRadius: "20px",
