@@ -146,8 +146,23 @@ class Bartender(BaseModel):
     bairro = models.CharField(max_length=255, blank=True)
     numero = models.CharField(max_length=20, blank=True)
 
-    def __str__(self):
-        return f"Bartender: {self.user.email}"
+    @property
+    def media_avaliacoes(self):
+        """Calcula a media a partir da tabela Avaliacao"""
+        from django.db.models import Avg
+        resultado = self.pedidos.filter(
+            status=PedidoStatus.CONCLUIDO,
+            avaliacao__isnull=False
+        ).aggregate(media=Avg('avaliacao__nota'))
+        return round(resultado['media'] or 0.0, 2)
+
+    @property
+    def total_avaliacoes(self):
+        """Total de avaliacoes recebidas"""
+        return Avaliacao.objects.filter(
+            pedido__bartender=self,
+            pedido__status=PedidoStatus.CONCLUIDO
+        ).count()
     
 
 def drink_image_path(instance, filename):
