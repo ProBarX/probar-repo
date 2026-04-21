@@ -11,6 +11,7 @@ import requests as _requests
 from core.api.v1.auth_serializers import GoogleAuthSerializer
 from core.services.google_auth import verify_google_id_token
 from core.models import Cliente, Bartender
+from core.api.v1.auth_serializers import GoogleVerifySerializer
 
 
 class GoogleAuthView(APIView):
@@ -29,7 +30,7 @@ class GoogleAuthView(APIView):
         data = serializer.validated_data
 
         id_token_str = data['id_token']
-        tipo_usuario = data['tipo_usuario']
+        tipo_usuario = data.get('tipo_usuario', None)
 
         try:
             info = verify_google_id_token(id_token_str)
@@ -47,6 +48,9 @@ class GoogleAuthView(APIView):
         user = User.objects.filter(email=email).first()
         created = False
         if not user:
+            # para criar usuário precisamos do tipo; se não foi fornecido, informar erro
+            if not tipo_usuario:
+                return Response({'detail': 'tipo_required'}, status=status.HTTP_400_BAD_REQUEST)
             # cria usuário sem senha (provedor externo)
             user = User(email=email, name=name or '', tipo=tipo_usuario)
             user.set_unusable_password()
@@ -102,4 +106,39 @@ class GoogleAuthView(APIView):
             'refresh': str(refresh),
             'tipo': user.tipo,
             'created': created,
+        }, status=status.HTTP_200_OK)
+
+
+class GoogleAuthVerifyView(APIView):
+    """Verifica id_token do Google e retorna se o usuário já existe.
+
+    POST /api/auth/google/verify/
+    Payload: { id_token: str }
+    Retorno: { exists: bool, email, name, picture }
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        serializer = GoogleVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        id_token_str = serializer.validated_data['id_token']
+
+        try:
+            info = verify_google_id_token(id_token_str)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = info.get('email')
+        name = info.get('name')
+        picture = info.get('picture')
+
+        User = get_user_model()
+        exists = User.objects.filter(email=email).exists()
+
+        return Response({
+            'exists': exists,
+            'email': email,
+            'name': name,
+            'picture': picture,
         }, status=status.HTTP_200_OK)

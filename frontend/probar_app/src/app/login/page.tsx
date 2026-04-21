@@ -4,7 +4,7 @@ import { kaushan } from "@/fonts"
 export default function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-50 p-8">
-      <div className="w-full max-w-5xl rounded-2xl shadow-xl flex overflow-hidden">
+      <div className="w-full max-w-5xl rounded-2xl border border-gray-200 flex overflow-hidden bg-white">
 
 
         <div className="hidden md:flex md:w-1/2 relative items-center justify-center bg-[#ffffff] overflow-hidden p-8">
@@ -19,7 +19,7 @@ export default function LoginPage() {
         </div>
 
       
-          <div className="w-full md:w-1/2 p-10 flex flex-col bg-[#ffffff] text-[#000000] justify-center">
+          <div className="w-full md:w-1/2 border-l border-gray-200 p-10 flex flex-col bg-white text-[#000000] justify-center">
           <div className="mb-6">
             <h2 className="text-2xl font-bold">Bem-vindo!</h2>
             <p className="text-gray-500 text-sm mt-1">Entre na sua conta para continuar</p>
