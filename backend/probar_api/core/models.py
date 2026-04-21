@@ -7,7 +7,8 @@ from .managers import CustomUserManager
 import uuid
 import os
 from django.core.exceptions import ValidationError
-from core.enums import TipoUsuario, Especialidade, TipoTermo, StatusEvento
+from core.enums import *
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 # Base para Soft Delete e controle de datas
@@ -248,3 +249,102 @@ class Evento(BaseModel):
 
     def __str__(self):
         return f"Evento: {self.nome}"
+
+
+class Pedido(BaseModel):
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='pedidos')
+    bartender = models.ForeignKey(Bartender, on_delete=models.CASCADE, related_name='pedidos')
+    evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='pedidos')
+    status = models.CharField(max_length=20, choices=PedidoStatus.choices, default=PedidoStatus.EM_NEGOCIACAO)
+
+    class Meta:
+        verbose_name = 'Pedido'
+        verbose_name_plural = 'Pedidos'
+
+    def __str__(self):
+        return f'Pedido #{self.pk} - {self.get_status_display()}'
+
+
+class Proposta(BaseModel):
+    pedido = models.ForeignKey('Pedido', on_delete=models.CASCADE, related_name='propostas')
+    remetente = models.ForeignKey(User, on_delete=models.CASCADE, related_name='propostas_enviadas')
+    tipo = models.CharField(max_length=20, choices=PropostaTipo.choices)
+    horas = models.PositiveIntegerField()
+    valor_hora = models.DecimalField(max_digits=10, decimal_places=2)
+    valor_adicional = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    desconto = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    status = models.CharField(max_length=20, choices=PropostaStatus.choices, default=PropostaStatus.PENDENTE)
+
+    class Meta:
+        ordering = ['-criado_em']
+
+    @property
+    def valor_total(self):
+        """Calcula o valor total da proposta"""
+        return (self.horas * self.valor_hora) + self.valor_adicional - self.desconto
+
+    def save(self, *args, **kwargs):
+        # Se nao tiver valor_hora definido, pega do bartender
+        if not self.valor_hora:
+            self.valor_hora = self.pedido.bartender.valor_hora
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'Proposta #{self.pk} ({self.get_status_display()})'
+
+
+class Mensagem(BaseModel):
+    chat = models.ForeignKey('Chat', on_delete=models.CASCADE, related_name='mensagens')
+    remetente = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='mensagens')
+    tipo = models.CharField(max_length=20, choices=MensagemTipo.choices)
+    conteudo = models.TextField(blank=True)
+    payload = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Mensagem'
+        verbose_name_plural = 'Mensagens'
+        ordering = ['criado_em']
+
+    def __str__(self):
+        remetente = self.remetente.email if self.remetente else "Sistema"
+        return f'Mensagem #{self.pk} para Chat #{self.chat_id} por {remetente}'
+
+
+class Chat(BaseModel):
+    pedido = models.OneToOneField(Pedido, on_delete=models.CASCADE, related_name='chat')
+
+    class Meta:
+        verbose_name = 'Chat'
+        verbose_name_plural = 'Chats'
+        ordering = ['criado_em']
+
+    def __str__(self):
+        return f'Chat do Pedido #{self.pedido_id}'
+    
+
+class Avaliacao(BaseModel):
+    pedido = models.OneToOneField(Pedido, on_delete=models.CASCADE, related_name='avaliacao')
+    nota = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comentario = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'Avaliação'
+        verbose_name_plural = 'Avaliações'
+
+    def __str__(self):
+        return f'Avaliação #{self.pk} - Nota: {self.nota} para o Bartender: {self.pedido.bartender.user.name} - {self.pedido.bartender.user.email} - Pedido #{self.pedido.pk}'
+    
+
+class Pagamento(BaseModel):
+    pedido = models.OneToOneField(Pedido, on_delete=models.CASCADE, related_name='pagamento')
+    valor = models.DecimalField(max_digits=12, decimal_places=2)
+    data_pagamento = models.DateTimeField(auto_now_add=True)
+    metodo_pagamento = models.CharField(max_length=50, choices=PagamentoMetodo.choices)
+    status = models.CharField(max_length=20, choices=PagamentoStatus.choices, default=PagamentoStatus.PENDENTE)
+
+    class Meta:
+        verbose_name = 'Pagamento'
+        verbose_name_plural = 'Pagamentos'
+
+    def __str__(self):
+        return f'Pagamento #{self.pk} - Pedido #{self.pedido_id} - Valor: {self.valor}'
