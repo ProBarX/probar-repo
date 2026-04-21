@@ -204,8 +204,13 @@ class Drink(BaseModel):
 
             if drinks_qs.count() >= 6:
                 raise ValidationError(
-                "Este bartender já possui o máximo de 6 drinks."
+                    _("Este bartender já possui o máximo de 6 drinks.")
                 )
+    
+    def save(self, *args, **kwargs):
+        # Garantir validações declaradas em clean()
+        self.full_clean()
+        super().save(*args, **kwargs)
     
     
     def __str__(self):
@@ -238,7 +243,12 @@ class AceiteTermos(BaseModel):
 
     def clean(self):
         if self.termo.tipo != self.user.tipo:
-            raise ValidationError("O usuário não pode aceitar termos de uma função diferente da sua.")
+            raise ValidationError(_("O usuário não pode aceitar termos de uma função diferente da sua."))
+
+    def save(self, *args, **kwargs):
+        # Garantir validação antes de salvar
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.email} aceitou v{self.termo.versao} ({self.termo.tipo})"
@@ -285,7 +295,6 @@ class Proposta(BaseModel):
     remetente = models.ForeignKey(User, on_delete=models.CASCADE, related_name='propostas_enviadas')
     tipo = models.CharField(max_length=20, choices=PropostaTipo.choices)
     horas = models.PositiveIntegerField()
-    valor_hora = models.DecimalField(max_digits=10, decimal_places=2)
     valor_adicional = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     desconto = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     status = models.CharField(max_length=20, choices=PropostaStatus.choices, default=PropostaStatus.PENDENTE)
@@ -296,13 +305,9 @@ class Proposta(BaseModel):
     @property
     def valor_total(self):
         """Calcula o valor total da proposta"""
-        return (self.horas * self.valor_hora) + self.valor_adicional - self.desconto
-
-    def save(self, *args, **kwargs):
-        # Se nao tiver valor_hora definido, pega do bartender
-        if not self.valor_hora:
-            self.valor_hora = self.pedido.bartender.valor_hora
-        super().save(*args, **kwargs)
+        # regra de negócio: calcular com base no valor_hora do bartender
+        valor_hora = self.pedido.bartender.valor_hora
+        return (self.horas * valor_hora) + self.valor_adicional - self.desconto
 
     def __str__(self):
         return f'Proposta #{self.pk} ({self.get_status_display()})'
