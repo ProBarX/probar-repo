@@ -1,6 +1,6 @@
 "use client"
 
-import { ChangeEvent, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 
@@ -167,10 +167,10 @@ export function CompleteBartenderRegistrationForm() {
             <label className="text-sm font-semibold text-[#111]">Especialidade</label>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { value: "showman", label: "Showman" },
-                { value: "mixologista", label: "Mixologista" },
-                { value: "tradicional", label: "Tradicional" },
-                { value: "night_club", label: "Night Club" },
+                { value: "showman", label: "Showman", subtitle: "Entretenimento e performance" },
+                { value: "mixologista", label: "Mixologista", subtitle: "Drinks autorais e moléculas" },
+                { value: "tradicional", label: "Tradicional", subtitle: "Drinks clássicos e atendimentos" },
+                { value: "night_club", label: "Night Club", subtitle: "Alta demanda e velocidade" },
               ].map((item) => (
                 <button
                   key={item.value}
@@ -179,7 +179,7 @@ export function CompleteBartenderRegistrationForm() {
                   className={`rounded-2xl border p-3 text-left ${especialidade === item.value ? "border-[#FFC105] bg-yellow-50" : "border-[#D1D5DB] bg-white"}`}
                 >
                   <span className="block font-medium">{item.label}</span>
-                  <span className="text-xs text-[#6B7280]">Selecione a que mais combina com seu perfil</span>
+                  <span className="text-xs text-[#6B7280]">{item.subtitle}</span>
                 </button>
               ))}
             </div>
@@ -190,26 +190,14 @@ export function CompleteBartenderRegistrationForm() {
 
     return (
       <>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-[#111]">CEP</label>
-            <input
-              value={cep}
-              onChange={(e) => setCep(formatCep(e.target.value))}
-              placeholder="00000-000"
-              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-[#111]">Número</label>
-            <input
-              value={numero}
-              onChange={(e) => setNumero(e.target.value)}
-              placeholder="123"
-              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
-            />
-          </div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-[#111]">CEP</label>
+          <input
+            value={cep}
+            onChange={(e) => setCep(formatCep(e.target.value))}
+            placeholder="00000-000"
+            className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+          />
         </div>
 
         <div className="space-y-2">
@@ -222,14 +210,26 @@ export function CompleteBartenderRegistrationForm() {
           />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-[#111]">Bairro</label>
-          <input
-            value={bairro}
-            onChange={(e) => setBairro(e.target.value)}
-            placeholder="Bairro"
-            className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-[#111]">Bairro</label>
+            <input
+              value={bairro}
+              onChange={(e) => setBairro(e.target.value)}
+              placeholder="Bairro"
+              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-[#111]">N°</label>
+            <input
+              value={numero}
+              onChange={(e) => setNumero(e.target.value)}
+              placeholder="123"
+              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+            />
+          </div>
         </div>
       </>
     )
@@ -266,12 +266,12 @@ export function CompleteBartenderRegistrationForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC] p-6">
-      <div className="w-full max-w-xl space-y-8">
+    <div className="flex min-h-screen items-center justify-center bg-white p-6">
+      <div className="w-full max-w-[520px] space-y-8">
         <div className="space-y-3 text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[#F5C518]">ProBar</p>
           <h1 className="text-3xl font-bold text-[#111827]">Complete seu perfil profissional</h1>
-          <p className="text-[#6B7280]">Adicione suas informações para finalizar seu cadastro de bartender.</p>
+          <p className="text-sm text-[#6B7280]">Adicione suas informações para finalizar seu cadastro de bartender.</p>
         </div>
 
         <div className="rounded-[32px] border border-[#E5E7EB] bg-white p-8 shadow-[0px_24px_80px_rgba(15,23,42,0.08)]">
@@ -286,7 +286,7 @@ export function CompleteBartenderRegistrationForm() {
                     <div className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-semibold ${isActive ? "bg-[#F5C518] text-black" : "bg-[#E5E7EB] text-[#6B7280]"}`}>
                       {stepNumber}
                     </div>
-                    <span className="hidden text-xs text-[#6B7280] sm:block">{label}</span>
+                    <span className="text-xs text-[#6B7280]">{label}</span>
                   </div>
                 )
               })}
@@ -297,8 +297,8 @@ export function CompleteBartenderRegistrationForm() {
             <div>
               <h2 className="text-2xl font-bold text-[#111827]">{steps[step - 1]}</h2>
               <p className="mt-2 text-sm text-[#6B7280]">
-                {step === 1 && 'Adicione sua foto e dados pessoais'}
-                {step === 2 && 'Fale sobre sua experiência e especialidade'}
+                {step === 1 && 'Adicione sua foto e informações básicas'}
+                {step === 2 && 'Fale sobre sua experiência'}
                 {step === 3 && 'Informe seu endereço de atuação'}
               </p>
             </div>
@@ -307,12 +307,12 @@ export function CompleteBartenderRegistrationForm() {
 
             {error && <p className="text-sm text-red-500">{error}</p>}
 
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
+            <div className="mt-6 flex flex-col gap-3">
               <button
                 type="button"
                 onClick={() => setStep(Math.max(1, step - 1))}
                 disabled={step === 1 || loading}
-                className="rounded-full border border-[#E5E7EB] px-6 py-3 text-sm font-semibold text-[#111827] disabled:opacity-50"
+                className="w-full rounded-[12px] border border-[#E5E7EB] bg-white px-6 py-3 text-sm font-semibold text-[#111827] disabled:opacity-50"
               >
                 ← Voltar
               </button>
@@ -320,7 +320,7 @@ export function CompleteBartenderRegistrationForm() {
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="rounded-full bg-[#F5C518] px-6 py-3 text-sm font-semibold text-black"
+                  className="w-full rounded-[12px] bg-[#F5C518] px-6 py-3 text-sm font-semibold text-black"
                 >
                   Próximo →
                 </button>
@@ -329,7 +329,7 @@ export function CompleteBartenderRegistrationForm() {
                   type="button"
                   onClick={handleSubmit}
                   disabled={loading}
-                  className="rounded-full bg-[#F5C518] px-6 py-3 text-sm font-semibold text-black disabled:opacity-50"
+                  className="w-full rounded-[12px] bg-[#F5C518] px-6 py-3 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {loading ? "Concluindo..." : "Concluir cadastro →"}
                 </button>
