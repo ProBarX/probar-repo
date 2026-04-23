@@ -7,8 +7,20 @@ from .managers import CustomUserManager
 import uuid
 import os
 from django.core.exceptions import ValidationError
-from core.enums import *
+from core.enums import (
+    TipoUsuario,
+    Especialidade,
+    TipoTermo,
+    StatusEvento,
+    PedidoStatus,
+    PropostaStatus,
+    PropostaTipo,
+    MensagemTipo,
+    PagamentoMetodo,
+    PagamentoStatus,
+)
 from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
 
 
 # Base para Soft Delete e controle de datas
@@ -281,6 +293,12 @@ class Pedido(BaseModel):
     bartender = models.ForeignKey(Bartender, on_delete=models.CASCADE, related_name='pedidos')
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='pedidos')
     status = models.CharField(max_length=20, choices=PedidoStatus.choices, default=PedidoStatus.EM_NEGOCIACAO)
+    # referência para a proposta aprovada (snapshot imutável de aceite)
+    proposta_aprovada = models.OneToOneField(
+        'Proposta', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    valor_hora_aprovado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    horas_aprovadas = models.PositiveIntegerField(null=True, blank=True)
+    valor_total_aprovado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     class Meta:
         verbose_name = 'Pedido'
@@ -288,6 +306,64 @@ class Pedido(BaseModel):
 
     def __str__(self):
         return f'Pedido #{self.pk} - {self.get_status_display()}'
+
+    def create_initial_chat_messages(self, proposta):
+        """Cria o conjunto inicial de mensagens do chat após o pedido ser criado."""
+        chat, created_chat = Chat.objects.get_or_create(pedido=self)
+
+        # Mensagem de status inicial do pedido
+        Mensagem.objects.get_or_create(
+            chat=chat,
+            tipo=MensagemTipo.STATUS_UPDATE,
+            defaults={
+                'remetente': None,
+                'conteudo': _('Pedido criado para o evento %(evento)s') % {'evento': self.evento.nome},
+                'payload': {
+                    'pedido_id': self.pk,
+                    'evento_id': self.evento.pk,
+                    'evento_nome': self.evento.nome,
+                }
+            }
+        )
+
+        # Card com dados do evento
+        Mensagem.objects.get_or_create(
+            chat=chat,
+            tipo=MensagemTipo.CARD_EVENTO,
+            defaults={
+                'remetente': None,
+                'conteudo': '',
+                'payload': {
+                    'evento_id': self.evento.pk,
+                    'nome': self.evento.nome,
+                    'data': self.evento.data.isoformat(),
+                    'hora_inicio': self.evento.hora_inicio.strftime('%H:%M:%S'),
+                    'hora_fim': self.evento.hora_fim.strftime('%H:%M:%S'),
+                    'quantidade_convidados': self.evento.quantidade_convidados,
+                    'descricao_evento': self.evento.descricao_evento,
+                }
+            }
+        )
+
+        # Card com a proposta inicial
+        Mensagem.objects.get_or_create(
+            chat=chat,
+            tipo=MensagemTipo.CARD_PROPOSTA,
+            defaults={
+                'remetente': None,
+                'conteudo': '',
+                'payload': {
+                    'proposta_id': proposta.pk,
+                    'pedido_id': self.pk,
+                    'tipo': proposta.tipo,
+                    'horas': proposta.horas,
+                    'valor_total': str(proposta.valor_total),
+                    'status': proposta.status,
+                }
+            }
+        )
+
+        return chat
 
 
 class Proposta(BaseModel):
@@ -302,12 +378,144 @@ class Proposta(BaseModel):
     class Meta:
         ordering = ['-criado_em']
 
+    def _is_participant(self, user):
+        return user == self.pedido.cliente.user or user == self.pedido.bartender.user
+
+    def accept(self, user):
+        from django.db import transaction
+        if not self._is_participant(user):
+            raise PermissionError(_('Usuário sem permissão para aceitar esta proposta.'))
+
+        with transaction.atomic():
+            pedido = Pedido.objects.select_for_update().get(pk=self.pedido.pk)
+            if pedido.status != PedidoStatus.EM_NEGOCIACAO:
+                raise ValueError(_('Pedido não está em negociação.'))
+
+            # marca esta proposta como aceita e atualiza o pedido com snapshot dos valores aprovados
+            self.status = PropostaStatus.ACEITA
+            self.save()
+
+            pedido.proposta_aprovada = self
+            pedido.status = PedidoStatus.ACEITO
+            pedido.valor_hora_aprovado = pedido.bartender.valor_hora
+            pedido.horas_aprovadas = self.horas
+            pedido.valor_total_aprovado = self.valor_total
+            pedido.save()
+
+            # opcional: marcar outras propostas como substituídas
+            from django.db.models import Q
+            # marcar outras propostas pendentes como SUBSTITUIDA
+            Proposta.objects.filter(pedido=pedido, status=PropostaStatus.PENDENTE).exclude(pk=self.pk).update(status=PropostaStatus.SUBSTITUIDA)
+            # criar mensagem de sistema no chat para notificar sobre o aceite
+            try:
+                chat = Chat.objects.get(pedido=pedido)
+            except Chat.DoesNotExist:
+                chat = Chat.objects.create(pedido=pedido)
+
+            Mensagem.objects.create(
+                chat=chat,
+                remetente=None,
+                tipo=MensagemTipo.STATUS_UPDATE,
+                conteudo=_('Proposta aceita! O pagamento foi liberado.'),
+                payload={
+                    'proposta_id': self.pk,
+                    'pedido_id': pedido.pk,
+                    'valor_total': str(self.valor_total),
+                }
+            )
+
+            return self
+
+    def reject(self, user):
+        from django.db import transaction
+
+        if not self._is_participant(user):
+            raise PermissionError(_('Usuário sem permissão para recusar esta proposta.'))
+        with transaction.atomic():
+            pedido = Pedido.objects.select_for_update().get(pk=self.pedido.pk)
+            if pedido.status != PedidoStatus.EM_NEGOCIACAO:
+                raise ValueError(_('Pedido não está em negociação.'))
+
+            self.status = PropostaStatus.RECUSADA
+            self.save()
+
+            pedido.status = PedidoStatus.RECUSADO
+            pedido.save(update_fields=['status', 'atualizado_em'])
+
+            Proposta.objects.filter(pedido=pedido, status=PropostaStatus.PENDENTE).exclude(pk=self.pk).update(
+                status=PropostaStatus.CANCELADA
+            )
+
+            chat = Chat.objects.get_or_create(pedido=pedido)[0]
+            Mensagem.objects.create(
+                chat=chat,
+                remetente=None,
+                tipo=MensagemTipo.STATUS_UPDATE,
+                conteudo=_('Proposta recusada. A negociação foi encerrada.'),
+                payload={
+                    'proposta_id': self.pk,
+                    'pedido_id': pedido.pk,
+                    'pedido_status': PedidoStatus.RECUSADO,
+                }
+            )
+        return self
+
+    def cancel(self, user):
+        if user != self.remetente:
+            raise PermissionError(_('Usuário sem permissão para cancelar esta proposta.'))
+        if self.status != PropostaStatus.PENDENTE:
+            raise ValueError(_('A proposta só pode ser cancelada enquanto estiver pendente.'))
+
+        self.status = PropostaStatus.CANCELADA
+        self.save()
+        return self
+
+    def counter(self, user, *, horas=None, valor_adicional=None, desconto=None):
+        # cria uma contraproposta baseada nesta
+        if not self._is_participant(user):
+            raise PermissionError(_('Usuário sem permissão para criar contraproposta.'))
+
+        if self.pedido.status != PedidoStatus.EM_NEGOCIACAO:
+            raise ValueError(_('Pedido não está em negociação.'))
+
+        tipo = PropostaTipo.INICIAL
+        if valor_adicional and valor_adicional > 0:
+            tipo = PropostaTipo.ADICIONAL
+        elif desconto and desconto > 0:
+            tipo = PropostaTipo.DESCONTO
+
+        # Regras de papel: apenas o bartender pode criar contrapropostas do tipo adicional/desconto
+        if tipo in (PropostaTipo.ADICIONAL, PropostaTipo.DESCONTO):
+            bartender_user = self.pedido.bartender.user
+            if user != bartender_user:
+                raise PermissionError(_('Apenas o bartender pode criar contrapropostas de adicional/desconto.'))
+
+        nova = Proposta.objects.create(
+            pedido=self.pedido,
+            remetente=user,
+            tipo=tipo,
+            horas=horas if horas is not None else self.horas,
+            valor_adicional=valor_adicional if valor_adicional is not None else self.valor_adicional,
+            desconto=desconto if desconto is not None else self.desconto,
+            status=PropostaStatus.PENDENTE,
+        )
+
+        # marcar a proposta antiga como substituída
+        self.status = PropostaStatus.SUBSTITUIDA
+        self.save()
+        return nova
+
     @property
     def valor_total(self):
         """Calcula o valor total da proposta"""
         # regra de negócio: calcular com base no valor_hora do bartender
-        valor_hora = self.pedido.bartender.valor_hora
-        return (self.horas * valor_hora) + self.valor_adicional - self.desconto
+        valor_hora = self.pedido.bartender.valor_hora or Decimal('0')
+        # normalizar tipos para Decimal para evitar TypeError (Decimal + float)
+        horas_dec = Decimal(self.horas)
+        valor_adicional = Decimal(str(self.valor_adicional)) if self.valor_adicional is not None else Decimal('0')
+        desconto = Decimal(str(self.desconto)) if self.desconto is not None else Decimal('0')
+
+        return (horas_dec * valor_hora) + valor_adicional - desconto
 
     def __str__(self):
         return f'Proposta #{self.pk} ({self.get_status_display()})'

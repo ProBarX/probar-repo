@@ -7,13 +7,13 @@ from django.db import transaction
 from django.core.files.base import ContentFile
 from django.db import models as dj_models
 import requests as _requests
-
+from drf_spectacular.utils import extend_schema
 from core.api.v1.auth_serializers import GoogleAuthSerializer
 from core.services.google_auth import verify_google_id_token
 from core.models import Cliente, Bartender
 from core.api.v1.auth_serializers import GoogleVerifySerializer
 
-
+@extend_schema(tags=["Autenticação via Google"], request=GoogleAuthSerializer, responses={200: None})
 class GoogleAuthView(APIView):
     """Endpoint para autenticação social via Google.
 
@@ -109,6 +109,7 @@ class GoogleAuthView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+@extend_schema(tags=["Autenticação via Google"], request=GoogleVerifySerializer, responses={200: None})
 class GoogleAuthVerifyView(APIView):
     """Verifica id_token do Google e retorna se o usuário já existe.
 
@@ -119,6 +120,11 @@ class GoogleAuthVerifyView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @extend_schema(
+        summary="Verificar token do Google",
+        description="Verifica o token do Google e retorna informações sobre o usuário.",
+        responses=GoogleVerifySerializer,
+    )
     def post(self, request):
         serializer = GoogleVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
