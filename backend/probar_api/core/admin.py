@@ -1,7 +1,22 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
-from .models import User, Cliente, Termos, AceiteTermos, Evento, Bartender, Drink
+from django.contrib import messages
+from .models import (
+    User,
+    Cliente,
+    Termos,
+    AceiteTermos,
+    Evento,
+    Bartender,
+    Drink,
+    Pedido,
+    Proposta,
+    Chat,
+    Mensagem,
+    Avaliacao,
+    Pagamento,
+)
 
 
 class SoftDeleteAdmin(admin.ModelAdmin):
@@ -114,3 +129,78 @@ class EventoAdmin(SoftDeleteAdmin):
         'descricao_evento',
         'cliente__user__email'
     )
+
+
+
+@admin.register(Pedido)
+class PedidoAdmin(SoftDeleteAdmin):
+    list_display = ('id', 'cliente', 'bartender', 'evento', 'status', 'criado_em')
+    search_fields = ('cliente__user__email', 'bartender__user__email', 'evento__nome')
+    list_filter = ('status',)
+
+    # mostrar propostas inline no admin do pedido para facilitar testes
+    class PropostaInline(admin.TabularInline):
+        model = Proposta
+        extra = 0
+        readonly_fields = ('remetente', 'tipo', 'horas', 'valor_adicional', 'desconto', 'status', 'criado_em')
+        can_delete = False
+
+    inlines = [PropostaInline]
+
+
+@admin.register(Proposta)
+class PropostaAdmin(SoftDeleteAdmin):
+    list_display = ('id', 'pedido', 'remetente', 'tipo', 'horas', 'valor_adicional', 'desconto', 'status', 'criado_em')
+    search_fields = ('pedido__id', 'remetente__email')
+    list_filter = ('status', 'tipo')
+    actions = ['accept_proposals', 'reject_proposals']
+
+    def accept_proposals(self, request, queryset):
+        accepted = 0
+        for proposta in queryset:
+            try:
+                proposta.accept(request.user)
+                accepted += 1
+            except Exception as e:
+                self.message_user(request, f"Erro ao aceitar Proposta #{proposta.pk}: {e}", level=messages.ERROR)
+        self.message_user(request, f"{accepted} proposta(s) marcadas como aceitas.")
+
+    accept_proposals.short_description = "Aceitar propostas selecionadas"
+
+    def reject_proposals(self, request, queryset):
+        rejected = 0
+        for proposta in queryset:
+            try:
+                proposta.reject(request.user)
+                rejected += 1
+            except Exception as e:
+                self.message_user(request, f"Erro ao recusar Proposta #{proposta.pk}: {e}", level=messages.ERROR)
+        self.message_user(request, f"{rejected} proposta(s) recusadas.")
+
+    reject_proposals.short_description = "Recusar propostas selecionadas"
+
+
+@admin.register(Chat)
+class ChatAdmin(SoftDeleteAdmin):
+    list_display = ('id', 'pedido', 'criado_em')
+    search_fields = ('pedido__id',)
+
+
+@admin.register(Mensagem)
+class MensagemAdmin(SoftDeleteAdmin):
+    list_display = ('id', 'chat', 'remetente', 'tipo', 'criado_em')
+    search_fields = ('chat__pedido__id', 'remetente__email', 'conteudo')
+    list_filter = ('tipo',)
+
+
+@admin.register(Avaliacao)
+class AvaliacaoAdmin(SoftDeleteAdmin):
+    list_display = ('id', 'pedido', 'nota', 'criado_em')
+    search_fields = ('pedido__id', 'pedido__bartender__user__email')
+
+
+@admin.register(Pagamento)
+class PagamentoAdmin(SoftDeleteAdmin):
+    list_display = ('id', 'pedido', 'valor', 'metodo_pagamento', 'status', 'data_pagamento')
+    search_fields = ('pedido__id',)
+    list_filter = ('metodo_pagamento', 'status')
