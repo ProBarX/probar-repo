@@ -49,6 +49,8 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 12,    
 
     'DATE_FORMAT': '%d/%m/%Y', # formato de data 
     'TIME_FORMAT': '%H:%M', # formato de hora
@@ -83,11 +85,16 @@ SPECTACULAR_SETTINGS = {
     'SORT_TAGS': False,
     'TAGS': [
         {'name': 'Autenticação'},
+        {'name': 'Autenticação via Google'},
         {'name': 'Usuários'},
         {'name': 'Clientes'},
         {'name': 'Bartenders'},
         {'name': 'Drinks'},
         {'name': 'Eventos'},
+        {'name': 'Pedidos'},
+        {'name': 'Chats'},
+        {'name': 'Propostas'},
+        {'name': 'Mensagens'},
         {'name': 'Termos'},
         {'name': 'Aceite Termos'},
     ],

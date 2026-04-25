@@ -9,7 +9,7 @@ from core.views import CustomTokenView, CustomTokenRefreshView
 from .router.api import api_urls
 from django.conf import settings
 from django.conf.urls.static import static
-from core.api.v1.auth_views import GoogleAuthView
+from core.api.v1.auth_views import GoogleAuthView, GoogleAuthVerifyView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -31,6 +31,7 @@ urlpatterns = [
         name='token_refresh'
     ),
     path('api/auth/google/', GoogleAuthView.as_view(), name='google-auth'),
+    path('api/auth/google/verify/', GoogleAuthVerifyView.as_view(), name='google-auth-verify'),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path(
         'api/docs/',
