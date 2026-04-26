@@ -26,13 +26,13 @@ export default function ChooseEventPage() {
           onClick={() => router.back()}
           style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888", lineHeight: 1 }}
         >
-          ‹
+          ‹ <span style={{ flex: 1, textAlign: "center", fontSize: "18px", fontWeight: 500 }}>Voltar</span>
         </button>
-        <span style={{ flex: 1, textAlign: "center", fontSize: "15px", fontWeight: 500 }}>Voltar</span>
+        
       </div>
 
-      <h2 style={{ fontSize: "26px", fontWeight: 600, marginBottom: "8px" }}>Escolha o evento</h2>
-      <p style={{ fontSize: "14px", color: "#888", marginBottom: "24px" }}>
+      <h2 style={{ fontSize: "32px", fontWeight: 600, marginBottom: "8px" }}>Escolha o evento</h2>
+      <p style={{ fontSize: "16px", color: "#888", marginBottom: "24px" }}>
         Selecione um evento existente ou crie um novo para enviar ao bartender
       </p>
 
@@ -43,7 +43,7 @@ export default function ChooseEventPage() {
           style={{
             border: selectedId === ev.id ? "1.5px solid #F5C518" : "0.5px solid #ddd",
             borderRadius: "10px",
-            padding: "16px 20px",
+            padding: "20px 24px",
             marginBottom: "12px",
             cursor: "pointer",
             display: "flex",
@@ -78,8 +78,8 @@ export default function ChooseEventPage() {
               )}
             </div>
             <div>
-              <p style={{ fontWeight: 500, fontSize: "15px", margin: 0 }}>{ev.name}</p>
-              <p style={{ fontSize: "13px", color: "#888", margin: "2px 0 0" }}>
+              <p style={{ fontWeight: 500, fontSize: "17px", margin: 0 }}>{ev.name}</p>
+              <p style={{ fontSize: "15px", color: "#888", margin: "2px 0 0" }}>
                 {ev.city} - CEP {ev.cep}
               </p>
             </div>
@@ -91,7 +91,7 @@ export default function ChooseEventPage() {
               router.push(`/client/event/${ev.id}/edit`)
             }}
             style={{
-              fontSize: "13px",
+              fontSize: "15px",
               color: "#F5C518",
               fontWeight: 500,
               cursor: "pointer",
@@ -109,7 +109,7 @@ export default function ChooseEventPage() {
         onClick={() => router.push("/client/event/new")}
         style={{
           color: "#F5C518",
-          fontSize: "14px",
+          fontSize: "16px",
           fontWeight: 500,
           background: "none",
           border: "none",
@@ -125,11 +125,11 @@ export default function ChooseEventPage() {
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button
           style={{
-            padding: "12px 32px",
+            padding: "14px 36px",
             background: "#F5C518",
             border: "none",
             borderRadius: "10px",
-            fontSize: "15px",
+            fontSize: "17px",
             fontWeight: 600,
             cursor: "pointer",
           }}

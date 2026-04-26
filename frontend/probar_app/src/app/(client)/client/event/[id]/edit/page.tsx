@@ -68,17 +68,17 @@ export default function EditEventPage({ params }: Props) {
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    padding: "10px 14px",
+    padding: "12px 16px",
     borderRadius: "8px",
     border: "0.5px solid #ddd",
-    fontSize: "14px",
+    fontSize: "16px",
     color: "#1a1a1a",
     fontFamily: "inherit",
     outline: "none",
   }
 
   const labelStyle: React.CSSProperties = {
-    fontSize: "13px",
+    fontSize: "15px",
     color: "#888",
     marginBottom: "6px",
     display: "block",
@@ -92,12 +92,12 @@ export default function EditEventPage({ params }: Props) {
           onClick={() => router.push("/client/event/choose")}
           style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888", lineHeight: 1 }}
         >
-          ‹
+          ‹ <span style={{ flex: 1, textAlign: "center", fontSize: "18px", fontWeight: 500 }}>Voltar</span>
         </button>
-        <span style={{ flex: 1, textAlign: "center", fontSize: "15px", fontWeight: 500 }}>Voltar</span>
+        
       </div>
 
-      <h2 style={{ fontSize: "26px", fontWeight: 600, marginBottom: "24px" }}>Editar evento</h2>
+      <h2 style={{ fontSize: "32px", fontWeight: 600, marginBottom: "24px" }}>Editar evento</h2>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
         {/* CEP */}
@@ -142,7 +142,7 @@ export default function EditEventPage({ params }: Props) {
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
-                fontSize: "12px",
+                fontSize: "14px",
                 color: "#888",
                 whiteSpace: "nowrap",
               }}
@@ -221,7 +221,7 @@ export default function EditEventPage({ params }: Props) {
             onChange={(e) => handleChange("descricao", e.target.value)}
             style={{ ...inputStyle, height: "100px", resize: "none" }}
           />
-          <span style={{ fontSize: "11px", color: "#aaa" }}>{form.descricao.length}/128</span>
+          <span style={{ fontSize: "13px", color: "#aaa" }}>{form.descricao.length}/128</span>
         </div>
 
         {/* Data + Horários */}
@@ -261,15 +261,17 @@ export default function EditEventPage({ params }: Props) {
       <button
         onClick={handleSave}
         style={{
-          width: "100%",
+          width: "459px",
           padding: "14px",
           background: "#F5C518",
           border: "none",
-          borderRadius: "28px",
-          fontSize: "15px",
+          borderRadius: "20px",
+          fontSize: "17px",
           fontWeight: 600,
           cursor: "pointer",
           marginTop: "24px",
+          margin: "24px auto 0 auto",
+          display: "block",
           color: "#1a1a1a",
         }}
       >
