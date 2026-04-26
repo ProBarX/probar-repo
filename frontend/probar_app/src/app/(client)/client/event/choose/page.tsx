@@ -11,8 +11,8 @@ type Event = {
 }
 
 const mockEvents: Event[] = [
-  { id: 1, name: "Conexão Digital",  city: "São Paulo",    cep: "01000000" },
-  { id: 2, name: "Agro Experience",  city: "Rio de Janeiro", cep: "06410001" },
+  { id: 1, name: "Conexão Digital", city: "São Paulo", cep: "01000000" },
+  { id: 2, name: "Agro Experience", city: "Rio de Janeiro", cep: "06410001" },
 ]
 
 export default function ChooseEventPage() {
@@ -24,11 +24,11 @@ export default function ChooseEventPage() {
       <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
         <button
           onClick={() => router.back()}
-          style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888" }}
+          style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888", lineHeight: 1 }}
         >
-          ‹ <span style={{ flex: 1, textAlign: "center", fontSize: "20px", fontWeight: 500 }}>Voltar</span>
+          ‹
         </button>
-        
+        <span style={{ flex: 1, textAlign: "center", fontSize: "15px", fontWeight: 500 }}>Voltar</span>
       </div>
 
       <h2 style={{ fontSize: "26px", fontWeight: 600, marginBottom: "8px" }}>Escolha o evento</h2>
@@ -84,18 +84,40 @@ export default function ChooseEventPage() {
               </p>
             </div>
           </div>
-          <span
-            onClick={(e) => { e.stopPropagation(); router.push(`/client/event/${ev.id}/edit`) }}
-            style={{ fontSize: "13px", color: "#F5C518", fontWeight: 500, cursor: "pointer" }}
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              router.push(`/client/event/${ev.id}/edit`)
+            }}
+            style={{
+              fontSize: "13px",
+              color: "#F5C518",
+              fontWeight: 500,
+              cursor: "pointer",
+              background: "none",
+              border: "none",
+              padding: "4px 8px",
+            }}
           >
             Editar
-          </span>
+          </button>
         </div>
       ))}
 
       <button
         onClick={() => router.push("/client/event/new")}
-        style={{ color: "#F5C518", fontSize: "14px", fontWeight: 500, background: "none", border: "none", cursor: "pointer", padding: "4px 0", display: "block", marginBottom: "24px" }}
+        style={{
+          color: "#F5C518",
+          fontSize: "14px",
+          fontWeight: 500,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "4px 0",
+          display: "block",
+          marginBottom: "32px",
+        }}
       >
         + Criar novo evento
       </button>
