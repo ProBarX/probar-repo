@@ -196,9 +196,13 @@ class DrinkViewSet(viewsets.ModelViewSet):
 
 @extend_schema(tags=["Eventos"])
 class EventoViewSet(viewsets.ModelViewSet):
-    queryset = Evento.objects.select_related('cliente').all()
     serializer_class = EventoSerializer
     permission_classes = [IsAuthenticated]
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Evento.objects.select_related('cliente').all()
+        return Evento.objects.filter(cliente__user=user).select_related('cliente')
 
     @extend_schema(
         summary="Criar evento",

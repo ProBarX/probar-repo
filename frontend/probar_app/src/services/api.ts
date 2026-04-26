@@ -5,7 +5,7 @@ let cachedToken: string | null = null
 async function getToken(): Promise<string | null> {
     if (cachedToken) return cachedToken
     try {
-        const res = await fetch("/api/get-token")
+        const res = await fetch("/api/auth/get-token")
         const data = await res.json()
         cachedToken = data.token ?? null
         return cachedToken
