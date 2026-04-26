@@ -48,7 +48,13 @@ export default function ProfilePage() {
 
 function formatDate(iso: string) {
   if (!iso) return "—"
-  return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR", {
-    day: "2-digit", month: "short", year: "numeric",
+
+  const date = new Date(iso)
+  
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
   })
 }
