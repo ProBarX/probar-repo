@@ -215,7 +215,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               </span>
             </div>
 
-            <button onClick={() => router.push("/client/event")} style={{
+            <button onClick={() => router.push("/client/event/choose")} style={{
               width: "100%", padding: "12px", marginTop: "12px",
               background: "#F5C518", border: "none", borderRadius: "10px",
               fontSize: "15px", fontWeight: "700", cursor: "pointer", color: "#1a1000",

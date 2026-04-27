@@ -271,11 +271,11 @@ export default function ChatPage() {
               </div>
 
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontWeight: 600, fontSize: "14px", margin: "0 0 2px" }}>
+                <p style={{ fontWeight: 600, fontSize: "15px", margin: "0 0 2px" }}>
                   {c.bartender.nome}
                 </p>
                 <p style={{
-                  fontSize: "12px",
+                  fontSize: "13px",
                   color: "#999",
                   margin: 0,
                   overflow: "hidden",
@@ -342,10 +342,10 @@ export default function ChatPage() {
             {conversa.bartender.nome[0]}
           </div>
           <div>
-            <p style={{ fontWeight: 600, margin: 0, fontSize: "15px" }}>
+            <p style={{ fontWeight: 600, margin: 0, fontSize: "17px" }}>
               {conversa.bartender.nome}
             </p>
-            <p style={{ fontSize: "12px", color: "#999", margin: 0 }}>
+            <p style={{ fontSize: "13px", color: "#999", margin: 0 }}>
               {conversa.bartender.especialidade}
             </p>
           </div>
@@ -370,9 +370,9 @@ export default function ChatPage() {
                   key={msg.id}
                   style={{
                     maxWidth: "60%",
-                    padding: "9px 14px",
+                    padding: "10px 16px",
                     borderRadius: "14px",
-                    fontSize: "14px",
+                    fontSize: "16px",
                     lineHeight: 1.5,
                     alignSelf: isOwn ? "flex-end" : "flex-start",
                     background: isOwn ? "#F5C518" : "#fff",
@@ -435,7 +435,7 @@ export default function ChatPage() {
               padding: "10px 16px",
               border: "1px solid #e5e5e5",
               borderRadius: "24px",
-              fontSize: "14px",
+              fontSize: "16px",
               outline: "none",
               background: "#f5f5f5",
               color: "#1a1a1a",

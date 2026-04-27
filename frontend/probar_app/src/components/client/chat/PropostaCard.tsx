@@ -62,11 +62,11 @@ export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, on
         alignItems: "center",
         justifyContent: "space-between",
       }}>
-        <span style={{ fontWeight: 500, fontSize: "14px", color: "#1a1a1a" }}>
+        <span style={{ fontWeight: 500, fontSize: "15px", color: "#1a1a1a" }}>
           $ Proposta
         </span>
         <span style={{
-          fontSize: "11px",
+          fontSize: "12px",
           padding: "2px 8px",
           borderRadius: "20px",
           fontWeight: 500,
@@ -82,15 +82,15 @@ export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, on
           <span style={{ fontSize: "22px", fontWeight: 500 }}>
             R$ {proposta.valor_total.toLocaleString("pt-BR")}
           </span>
-          <span style={{ fontSize: "13px", color: "#888" }}>{proposta.horas}h</span>
+          <span style={{ fontSize: "15px", color: "#888" }}>{proposta.horas}h</span>
         </div>
 
-        <p style={{ fontSize: "12px", color: "#888", marginTop: "6px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: "14px", color: "#888", marginTop: "6px", lineHeight: 1.5 }}>
           {proposta.tipo === "inicial"
             ? "Proposta inicial para o evento"
             : "Contraproposta enviada"}
         </p>
-        <p style={{ fontSize: "11px", color: "#aaa", marginTop: "4px" }}>
+        <p style={{ fontSize: "13px", color: "#aaa", marginTop: "4px" }}>
           De: {isMinhaProosta ? "Você" : "Bartender"}
         </p>
 
@@ -123,17 +123,17 @@ export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, on
         )}
 
         {proposta.status === "aceita" && (
-          <p style={{ fontSize: "12px", color: "#3B6D11", marginTop: "10px" }}>
+          <p style={{ fontSize: "14px", color: "#3B6D11", marginTop: "10px" }}>
             ✓ Contratação confirmada!
           </p>
         )}
         {proposta.status === "recusada" && (
-          <p style={{ fontSize: "12px", color: "#A32D2D", marginTop: "10px" }}>
+          <p style={{ fontSize: "14px", color: "#A32D2D", marginTop: "10px" }}>
             Proposta recusada.
           </p>
         )}
         {proposta.status === "cancelada" && (
-          <p style={{ fontSize: "12px", color: "#888", marginTop: "10px" }}>
+          <p style={{ fontSize: "14px", color: "#888", marginTop: "10px" }}>
             Proposta cancelada pelo cliente.
           </p>
         )}
@@ -145,7 +145,7 @@ export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, on
 function btnStyle(variant: "default" | "accept" | "reject" | "cancel"): React.CSSProperties {
   const base: React.CSSProperties = {
     flex: 1, padding: "7px 0", borderRadius: "8px",
-    fontSize: "13px", fontWeight: 500, cursor: "pointer",
+    fontSize: "14px", fontWeight: 500, cursor: "pointer",
   }
   if (variant === "accept") return { ...base, background: "#F5C518", border: "0.5px solid #EF9F27", color: "#1a1a1a" }
   if (variant === "reject") return { ...base, background: "#fff", border: "0.5px solid #E24B4A", color: "#A32D2D" }

@@ -39,13 +39,13 @@ export function CounterPropostaForm({ propostaId, horasAtual, valorAtual, onEnvi
       maxWidth: "340px",
       alignSelf: "flex-end",
     }}>
-      <p style={{ fontSize: "13px", fontWeight: 500, marginBottom: "10px" }}>
+      <p style={{ fontSize: "15px", fontWeight: 500, marginBottom: "10px" }}>
         Enviar contraproposta
       </p>
 
       <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: "11px", color: "#888", marginBottom: "4px" }}>Horas</p>
+          <p style={{ fontSize: "13px", color: "#888", marginBottom: "4px" }}>Horas</p>
           <input
             type="number"
             min={1}
@@ -55,7 +55,7 @@ export function CounterPropostaForm({ propostaId, horasAtual, valorAtual, onEnvi
           />
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: "11px", color: "#888", marginBottom: "4px" }}>Desconto (R$)</p>
+          <p style={{ fontSize: "13px", color: "#888", marginBottom: "4px" }}>Desconto (R$)</p>
           <input
             type="number"
             min={0}

@@ -124,6 +124,7 @@ export default function ChooseEventPage() {
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button
+          onClick={() => router.push(`/client/chat/`)} // /client/chat/${selectedId}
           style={{
             padding: "14px 36px",
             background: "#F5C518",
