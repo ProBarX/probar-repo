@@ -215,6 +215,7 @@ class EventoSerializer(serializers.ModelSerializer):
             'descricao_evento',
             'status',
         ]
+        read_only_fields = ['cliente']
 
 
 class PropostaSerializer(serializers.ModelSerializer):

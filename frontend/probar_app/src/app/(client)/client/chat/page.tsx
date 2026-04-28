@@ -1,191 +1,324 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { PropostaCard, Proposta } from "@/components/client/chat/PropostaCard"
 import { CounterPropostaForm } from "@/components/client/chat/CounterPropostaForm"
+import { useChat, type Chat, type Mensagem } from "@/services/useChat"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type Bartender = {
-  id: number
-  nome: string
-  especialidade: string
-}
-
-type Mensagem = {
-  id: number
-  tipo: "texto" | "proposta"
-  remetente_id: number
-  conteudo?: string
-  proposta?: Proposta
-  criado_em: string
-}
-
-type Conversa = {
-  bartender: Bartender
-  pedido_id: number
-  mensagens: Mensagem[]
+type ChatEnriquecido = Chat & {
+  bartender_nome: string
+  bartender_especialidade: string
   nao_lidas: number
 }
 
-// ─── Mock ─────────────────────────────────────────────────────────────────────
-
-const CURRENT_USER_ID = 1
-
-const mockConversas: Conversa[] = [
-  {
-    bartender: { id: 10, nome: "Fulano", especialidade: "Tradicional" },
-    pedido_id: 101,
-    nao_lidas: 0,
-    mensagens: [
-      {
-        id: 1, tipo: "proposta", remetente_id: CURRENT_USER_ID,
-        criado_em: "2026-04-15T14:00:00",
-        proposta: {
-          id: 1, pedido: 101, remetente: CURRENT_USER_ID,
-          tipo: "inicial", horas: 4,
-          valor_adicional: "0.00", desconto: "0.00",
-          status: "pendente", criado_em: "2026-04-15T14:00:00",
-          valor_total: 2400,
-        }
-      }
-    ]
-  },
-  {
-    bartender: { id: 11, nome: "Cicrano", especialidade: "Showman" },
-    pedido_id: 102,
-    nao_lidas: 0,
-    mensagens: [
-      { id: 2, tipo: "texto", remetente_id: 11, conteudo: "Boa tarde! Vi seu pedido para o evento.", criado_em: "2026-04-15T10:30:00" },
-      { id: 3, tipo: "texto", remetente_id: CURRENT_USER_ID, conteudo: "Boa tarde!", criado_em: "2026-04-15T10:31:00" },
-    ]
-  },
-  {
-    bartender: { id: 12, nome: "Beltrano", especialidade: "Mixologista" },
-    pedido_id: 103,
-    nao_lidas: 1,
-    mensagens: [
-      {
-        id: 4, tipo: "proposta", remetente_id: 12,
-        criado_em: "2026-04-15T09:00:00",
-        proposta: {
-          id: 2, pedido: 103, remetente: 12,
-          tipo: "counter", horas: 3,
-          valor_adicional: "0.00", desconto: "100.00",
-          status: "pendente", criado_em: "2026-04-15T09:00:00",
-          valor_total: 900,
-        }
-      }
-    ]
-  }
-]
-
 const avatarColors = ["#3C3489", "#0F6E56", "#993C1D", "#185FA5", "#854F0B"]
+
+const CURRENT_USER_ID = (() => {
+  if (typeof window === "undefined") return 0
+  try {
+    const token = localStorage.getItem("access_token")
+    if (!token) return 0
+    const payload = JSON.parse(atob(token.split(".")[1]))
+    return payload.user_id ?? payload.id ?? 0
+  } catch {
+    return 0
+  }
+})()
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export default function ChatPage() {
   const router = useRouter()
-  const [conversas, setConversas] = useState<Conversa[]>(mockConversas)
+  const {
+    getChats,
+    getMensagens,
+    enviarMensagem,
+    aceitarProposta,
+    recusarProposta,
+    cancelarProposta,
+    enviarContraproposta,
+    loading: apiLoading,
+  } = useChat()
+
+  const [chats, setChats] = useState<ChatEnriquecido[]>([])
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [texto, setTexto] = useState("")
   const [counterParaId, setCounterParaId] = useState<number | null>(null)
+  const [loadingChats, setLoadingChats] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const conversa = conversas[selectedIdx]
+  // ── Carregar chats ─────────────────────────────────────────────────────────
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
-  const updateProposta = (propostaId: number, novoStatus: Proposta["status"]) => {
-    setConversas(prev => prev.map((c, i) => {
-      if (i !== selectedIdx) return c
-      return {
+  const carregarChats = useCallback(async () => {
+    try {
+      const data = await getChats()
+      // Enriquecer com dados do pedido (bartender vem via pedido)
+      const enriquecidos: ChatEnriquecido[] = data.map((c, i) => ({
         ...c,
-        mensagens: c.mensagens.map(m =>
-          m.proposta?.id === propostaId
-            ? { ...m, proposta: { ...m.proposta, status: novoStatus } }
-            : m
+        // Os dados do bartender virão da API de pedidos; por ora extraímos do payload se disponível
+        bartender_nome: (c as any).bartender_nome ?? `Chat ${c.pedido}`,
+        bartender_especialidade: (c as any).bartender_especialidade ?? "",
+        nao_lidas: 0,
+      }))
+      setChats(enriquecidos)
+    } catch (e) {
+      setError("Não foi possível carregar as conversas.")
+    } finally {
+      setLoadingChats(false)
+    }
+  }, [getChats])
+
+  useEffect(() => {
+    carregarChats()
+  }, [carregarChats])
+
+  // ── Scroll automático ao fim das mensagens ─────────────────────────────────
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [chats, selectedIdx])
+
+  // ── Polling para atualizar mensagens do chat selecionado ───────────────────
+
+  useEffect(() => {
+    if (chats.length === 0) return
+
+    const chatAtual = chats[selectedIdx]
+    if (!chatAtual) return
+
+    const poll = async () => {
+      try {
+        const mensagens = await getMensagens(chatAtual.id)
+        setChats(prev =>
+          prev.map((c, i) =>
+            i === selectedIdx ? { ...c, mensagens } : c
+          )
         )
+      } catch {
+        // silencioso para não exibir erros de polling
       }
-    }))
+    }
+
+    poll() // busca imediata ao trocar de chat
+    pollingRef.current = setInterval(poll, 3000)
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current)
+    }
+  }, [selectedIdx, chats.length, getMensagens])
+
+  // ── Ações de proposta ──────────────────────────────────────────────────────
+
+  const updatePropostaLocal = (propostaId: number, novoStatus: Proposta["status"]) => {
+    setChats(prev =>
+      prev.map((c, i) => {
+        if (i !== selectedIdx) return c
+        return {
+          ...c,
+          mensagens: c.mensagens.map(m => {
+            if (m.payload && (m.payload as any).id === propostaId) {
+              return { ...m, payload: { ...(m.payload as any), status: novoStatus } }
+            }
+            return m
+          }),
+        }
+      })
+    )
   }
 
-  // ── Ações da proposta ──────────────────────────────────────────────────────
-
   const handleAceitar = async (propostaId: number) => {
-    // TODO: await apiFetch(`/propostas/${propostaId}/accept/`, { method: "POST" })
-    updateProposta(propostaId, "aceita")
+    try {
+      await aceitarProposta(propostaId)
+      updatePropostaLocal(propostaId, "aceita")
+    } catch {
+      // erro já tratado no hook
+    }
   }
 
   const handleRecusar = async (propostaId: number) => {
-    // TODO: await apiFetch(`/propostas/${propostaId}/reject/`, { method: "POST" })
-    updateProposta(propostaId, "recusada")
+    try {
+      await recusarProposta(propostaId)
+      updatePropostaLocal(propostaId, "recusada")
+    } catch {}
   }
 
   const handleCancelar = async (propostaId: number) => {
-    // TODO: await apiFetch(`/propostas/${propostaId}/cancel/`, { method: "POST" })
-    updateProposta(propostaId, "cancelada")
+    try {
+      await cancelarProposta(propostaId)
+      updatePropostaLocal(propostaId, "cancelada")
+    } catch {}
   }
 
   const handleEnviarCounter = async (
     propostaId: number,
     dados: { horas: number; desconto?: number; valor_adicional?: number }
   ) => {
-    // TODO: await apiFetch(`/propostas/${propostaId}/counter/`, { method: "POST", body: JSON.stringify(dados) })
-    const valorBase = 600
-    const novaProposta: Proposta = {
-      id: Date.now(),
-      pedido: conversa.pedido_id,
-      remetente: CURRENT_USER_ID,
-      tipo: "counter",
-      horas: dados.horas,
-      valor_adicional: String(dados.valor_adicional ?? 0),
-      desconto: String(dados.desconto ?? 0),
-      status: "pendente",
-      criado_em: new Date().toISOString(),
-      valor_total: valorBase * dados.horas - (dados.desconto ?? 0) + (dados.valor_adicional ?? 0),
-    }
+    try {
+      const novaProposta = await enviarContraproposta(propostaId, dados)
 
-    updateProposta(propostaId, "substituida")
+      // Marca proposta original como substituída
+      updatePropostaLocal(propostaId, "substituida")
 
-    setConversas(prev => prev.map((c, i) => {
-      if (i !== selectedIdx) return c
-      return {
-        ...c,
-        mensagens: [...c.mensagens, {
-          id: Date.now(),
-          tipo: "proposta",
-          remetente_id: CURRENT_USER_ID,
-          criado_em: new Date().toISOString(),
-          proposta: novaProposta,
-        }]
+      // Adiciona a nova proposta como mensagem local (a API também cria no backend via chat)
+      const novaMensagem: Mensagem = {
+        id: Date.now(),
+        chat: chats[selectedIdx].id,
+        remetente: CURRENT_USER_ID,
+        tipo: "proposta",
+        conteudo: "",
+        payload: novaProposta as any,
+        criado_em: new Date().toISOString(),
       }
-    }))
-    setCounterParaId(null)
+
+      setChats(prev =>
+        prev.map((c, i) =>
+          i === selectedIdx
+            ? { ...c, mensagens: [...c.mensagens, novaMensagem] }
+            : c
+        )
+      )
+      setCounterParaId(null)
+    } catch {}
   }
 
   // ── Envio de texto ─────────────────────────────────────────────────────────
 
-  const handleEnviarTexto = () => {
+  const handleEnviarTexto = async () => {
     if (!texto.trim()) return
-    // TODO: await apiFetch("/mensagens/", { method: "POST", body: JSON.stringify({ chat: chatId, conteudo: texto }) })
-    setConversas(prev => prev.map((c, i) => {
-      if (i !== selectedIdx) return c
-      return {
-        ...c,
-        mensagens: [...c.mensagens, {
-          id: Date.now(),
-          tipo: "texto",
-          remetente_id: CURRENT_USER_ID,
-          conteudo: texto.trim(),
-          criado_em: new Date().toISOString(),
-        }]
-      }
-    }))
+    const chatId = chats[selectedIdx]?.id
+    if (!chatId) return
+
+    const conteudo = texto.trim()
     setTexto("")
+
+    // Otimismo: adiciona localmente já
+    const novaMensagem: Mensagem = {
+      id: Date.now(),
+      chat: chatId,
+      remetente: CURRENT_USER_ID,
+      tipo: "texto",
+      conteudo,
+      payload: null,
+      criado_em: new Date().toISOString(),
+    }
+    setChats(prev =>
+      prev.map((c, i) =>
+        i === selectedIdx
+          ? { ...c, mensagens: [...c.mensagens, novaMensagem] }
+          : c
+      )
+    )
+
+    try {
+      await enviarMensagem(chatId, conteudo)
+    } catch {
+      // Reverter mensagem otimista em caso de erro
+      setChats(prev =>
+        prev.map((c, i) =>
+          i === selectedIdx
+            ? { ...c, mensagens: c.mensagens.filter(m => m.id !== novaMensagem.id) }
+            : c
+        )
+      )
+      setTexto(conteudo) // devolve o texto para o input
+    }
+  }
+
+  // ── Extrair proposta de uma mensagem ───────────────────────────────────────
+
+  const extractProposta = (msg: Mensagem): Proposta | null => {
+    if (msg.tipo !== "proposta") return null
+    if (msg.payload && typeof msg.payload === "object") {
+      return msg.payload as unknown as Proposta
+    }
+    return null
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (loadingChats) {
+    return (
+      <div style={{
+        display: "flex",
+        height: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "sans-serif",
+        color: "#888",
+        fontSize: "16px",
+      }}>
+        Carregando conversas...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        display: "flex",
+        height: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "sans-serif",
+        color: "#e53e3e",
+        fontSize: "16px",
+        flexDirection: "column",
+        gap: "12px",
+      }}>
+        <span>{error}</span>
+        <button
+          onClick={carregarChats}
+          style={{
+            padding: "10px 20px",
+            background: "#F5C518",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          Tentar novamente
+        </button>
+      </div>
+    )
+  }
+
+  if (chats.length === 0) {
+    return (
+      <div style={{
+        display: "flex",
+        height: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "sans-serif",
+        color: "#888",
+        fontSize: "16px",
+        flexDirection: "column",
+        gap: "16px",
+      }}>
+        <span>Nenhuma conversa ainda.</span>
+        <button
+          onClick={() => router.back()}
+          style={{
+            padding: "10px 20px",
+            background: "#F5C518",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          Voltar
+        </button>
+      </div>
+    )
+  }
+
+  const conversa = chats[selectedIdx]
 
   return (
     <div style={{
@@ -206,7 +339,6 @@ export default function ChatPage() {
         background: "#fff",
       }}>
 
-        {/* Cabeçalho com botão voltar */}
         <div style={{
           padding: "16px 16px 14px",
           borderBottom: "1px solid #eee",
@@ -237,75 +369,80 @@ export default function ChatPage() {
           <span style={{ fontWeight: 600, fontSize: "15px" }}>Conversas</span>
         </div>
 
-        {/* Lista de conversas */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {conversas.map((c, i) => (
-            <div
-              key={c.pedido_id}
-              onClick={() => { setSelectedIdx(i); setCounterParaId(null) }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                padding: "14px 16px",
-                cursor: "pointer",
-                borderBottom: "1px solid #f5f5f5",
-                background: i === selectedIdx ? "#fafafa" : "#fff",
-                transition: "background 0.15s",
-              }}
-            >
-              <div style={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                background: avatarColors[i % avatarColors.length],
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#fff",
-                fontWeight: 600,
-                fontSize: "15px",
-                flexShrink: 0,
-              }}>
-                {c.bartender.nome[0]}
-              </div>
+          {chats.map((c, i) => {
+            const ultimaMensagem = c.mensagens.at(-1)
+            const preview =
+              ultimaMensagem?.tipo === "proposta"
+                ? "Proposta enviada"
+                : ultimaMensagem?.conteudo ?? ""
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontWeight: 600, fontSize: "15px", margin: "0 0 2px" }}>
-                  {c.bartender.nome}
-                </p>
-                <p style={{
-                  fontSize: "13px",
-                  color: "#999",
-                  margin: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}>
-                  {c.mensagens.at(-1)?.tipo === "proposta"
-                    ? "Proposta enviada"
-                    : c.mensagens.at(-1)?.conteudo ?? ""}
-                </p>
-              </div>
-
-              {c.nao_lidas > 0 && (
+            return (
+              <div
+                key={c.id}
+                onClick={() => { setSelectedIdx(i); setCounterParaId(null) }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "14px 16px",
+                  cursor: "pointer",
+                  borderBottom: "1px solid #f5f5f5",
+                  background: i === selectedIdx ? "#fafafa" : "#fff",
+                  transition: "background 0.15s",
+                }}
+              >
                 <div style={{
-                  background: "#F5C518",
+                  width: 44,
+                  height: 44,
                   borderRadius: "50%",
-                  width: 20,
-                  height: 20,
+                  background: avatarColors[i % avatarColors.length],
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "11px",
-                  fontWeight: 700,
+                  color: "#fff",
+                  fontWeight: 600,
+                  fontSize: "15px",
                   flexShrink: 0,
                 }}>
-                  {c.nao_lidas}
+                  {c.bartender_nome[0]?.toUpperCase() ?? "B"}
                 </div>
-              )}
-            </div>
-          ))}
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontWeight: 600, fontSize: "15px", margin: "0 0 2px" }}>
+                    {c.bartender_nome}
+                  </p>
+                  <p style={{
+                    fontSize: "13px",
+                    color: "#999",
+                    margin: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {preview}
+                  </p>
+                </div>
+
+                {c.nao_lidas > 0 && (
+                  <div style={{
+                    background: "#F5C518",
+                    borderRadius: "50%",
+                    width: 20,
+                    height: 20,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}>
+                    {c.nao_lidas}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -339,14 +476,14 @@ export default function ChatPage() {
             fontWeight: 600,
             fontSize: "15px",
           }}>
-            {conversa.bartender.nome[0]}
+            {conversa.bartender_nome[0]?.toUpperCase() ?? "B"}
           </div>
           <div>
             <p style={{ fontWeight: 600, margin: 0, fontSize: "17px" }}>
-              {conversa.bartender.nome}
+              {conversa.bartender_nome}
             </p>
             <p style={{ fontSize: "13px", color: "#999", margin: 0 }}>
-              {conversa.bartender.especialidade}
+              {conversa.bartender_especialidade}
             </p>
           </div>
         </div>
@@ -362,7 +499,7 @@ export default function ChatPage() {
           background: "#f9f9f9",
         }}>
           {conversa.mensagens.map(msg => {
-            const isOwn = msg.remetente_id === CURRENT_USER_ID
+            const isOwn = msg.remetente === CURRENT_USER_ID
 
             if (msg.tipo === "texto") {
               return (
@@ -387,22 +524,25 @@ export default function ChatPage() {
               )
             }
 
-            if (msg.tipo === "proposta" && msg.proposta) {
+            if (msg.tipo === "proposta") {
+              const proposta = extractProposta(msg)
+              if (!proposta) return null
+
               return (
                 <div key={msg.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                   <PropostaCard
-                    proposta={msg.proposta}
+                    proposta={proposta}
                     currentUserId={CURRENT_USER_ID}
                     onAceitar={handleAceitar}
                     onRecusar={handleRecusar}
                     onCancelar={handleCancelar}
                     onCounter={(id) => setCounterParaId(counterParaId === id ? null : id)}
                   />
-                  {counterParaId === msg.proposta.id && (
+                  {counterParaId === proposta.id && (
                     <CounterPropostaForm
-                      propostaId={msg.proposta.id}
-                      horasAtual={msg.proposta.horas}
-                      valorAtual={msg.proposta.valor_total}
+                      propostaId={proposta.id}
+                      horasAtual={proposta.horas}
+                      valorAtual={proposta.valor_total}
                       onEnviar={handleEnviarCounter}
                       onCancelar={() => setCounterParaId(null)}
                     />
@@ -413,6 +553,15 @@ export default function ChatPage() {
 
             return null
           })}
+
+          {/* Loading indicator enquanto ação de proposta processa */}
+          {apiLoading && (
+            <div style={{ alignSelf: "center", color: "#aaa", fontSize: "13px" }}>
+              Processando...
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
@@ -443,17 +592,19 @@ export default function ChatPage() {
           />
           <button
             onClick={handleEnviarTexto}
+            disabled={!texto.trim()}
             style={{
               width: 40,
               height: 40,
               borderRadius: "50%",
-              background: "#F5C518",
+              background: texto.trim() ? "#F5C518" : "#e5e5e5",
               border: "none",
-              cursor: "pointer",
+              cursor: texto.trim() ? "pointer" : "not-allowed",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
+              transition: "background 0.15s",
             }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" strokeWidth="2">

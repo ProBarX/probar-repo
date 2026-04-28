@@ -1,23 +1,26 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-
-type Event = {
-  id: number
-  name: string
-  city: string
-  cep: string
-}
-
-const mockEvents: Event[] = [
-  { id: 1, name: "Conexão Digital", city: "São Paulo", cep: "01000000" },
-  { id: 2, name: "Agro Experience", city: "Rio de Janeiro", cep: "06410001" },
-]
+import { fetchEventos, type EventoAPI } from "@/services/useEvent"
 
 export default function ChooseEventPage() {
   const router = useRouter()
-  const [selectedId, setSelectedId] = useState<number>(mockEvents[0].id)
+
+  const [eventos, setEventos] = useState<EventoAPI[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchEventos()
+      .then((data) => {
+        setEventos(data)
+        if (data.length > 0) setSelectedId(data[0].id)
+      })
+      .catch(() => setError("Não foi possível carregar os eventos."))
+      .finally(() => setLoading(false))
+  }, [])
 
   return (
     <div>
@@ -26,9 +29,8 @@ export default function ChooseEventPage() {
           onClick={() => router.back()}
           style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888", lineHeight: 1 }}
         >
-          ‹ <span style={{ flex: 1, textAlign: "center", fontSize: "18px", fontWeight: 500 }}>Voltar</span>
+          ‹ <span style={{ fontSize: "18px", fontWeight: 500 }}>Voltar</span>
         </button>
-        
       </div>
 
       <h2 style={{ fontSize: "32px", fontWeight: 600, marginBottom: "8px" }}>Escolha o evento</h2>
@@ -36,7 +38,20 @@ export default function ChooseEventPage() {
         Selecione um evento existente ou crie um novo para enviar ao bartender
       </p>
 
-      {mockEvents.map((ev) => (
+      {/* Estados de loading / erro */}
+      {loading && (
+        <p style={{ color: "#888", fontSize: "15px" }}>Carregando eventos...</p>
+      )}
+      {error && (
+        <p style={{ color: "#e53e3e", fontSize: "15px" }}>{error}</p>
+      )}
+
+      {/* Lista de eventos */}
+      {!loading && !error && eventos.length === 0 && (
+        <p style={{ color: "#888", fontSize: "15px" }}>Nenhum evento encontrado.</p>
+      )}
+
+      {eventos.map((ev) => (
         <div
           key={ev.id}
           onClick={() => setSelectedId(ev.id)}
@@ -52,6 +67,7 @@ export default function ChooseEventPage() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            {/* Radio customizado */}
             <div
               style={{
                 width: "18px",
@@ -77,10 +93,11 @@ export default function ChooseEventPage() {
                 />
               )}
             </div>
+
             <div>
-              <p style={{ fontWeight: 500, fontSize: "17px", margin: 0 }}>{ev.name}</p>
+              <p style={{ fontWeight: 500, fontSize: "17px", margin: 0 }}>{ev.nome}</p>
               <p style={{ fontSize: "15px", color: "#888", margin: "2px 0 0" }}>
-                {ev.city} - CEP {ev.cep}
+                {ev.rua} — CEP {ev.cep}
               </p>
             </div>
           </div>
@@ -124,15 +141,17 @@ export default function ChooseEventPage() {
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button
-          onClick={() => router.push(`/client/chat/`)} // /client/chat/${selectedId}
+          disabled={selectedId === null}
+          onClick={() => router.push(`/client/chat/${selectedId}`)}
           style={{
             padding: "14px 36px",
-            background: "#F5C518",
+            background: selectedId === null ? "#ddd" : "#F5C518",
             border: "none",
             borderRadius: "10px",
             fontSize: "17px",
             fontWeight: 600,
-            cursor: "pointer",
+            cursor: selectedId === null ? "not-allowed" : "pointer",
+            color: "#1a1a1a",
           }}
         >
           Continuar
