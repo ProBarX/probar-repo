@@ -3,6 +3,30 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
+function isClientComplete(cliente: { data_nascimento?: string | null } | null) {
+  return !!cliente?.data_nascimento
+}
+
+function isBartenderComplete(bartender: {
+  data_nascimento?: string | null
+  anos_experiencia?: number | null
+  descricao_profissional?: string | null
+  cep?: string | null
+  rua?: string | null
+  bairro?: string | null
+  numero?: string | null
+} | null) {
+  return !!(
+    bartender?.data_nascimento &&
+    bartender?.anos_experiencia &&
+    bartender?.descricao_profissional &&
+    bartender?.cep &&
+    bartender?.rua &&
+    bartender?.bairro &&
+    bartender?.numero
+  )
+}
+
 function FullScreenLoading({ message = "Entrando..." }: { message?: string }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -89,9 +113,38 @@ export default function GoogleCallbackPage() {
             body: JSON.stringify({ token: authData.access, refresh: authData.refresh, tipo: authData.tipo }),
           })
 
-          // redirect direto para destino final
-          const dest = authData.tipo === "cliente" ? "/client/complete" : "/bartender/complete"
-          router.replace(dest)
+          // redireciona conforme o onboarding realmente necessário
+          if (authData.tipo === "cliente") {
+            const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/clientes/me/`, {
+              headers: { Authorization: `Bearer ${authData.access}` },
+            })
+
+            if (!clienteRes.ok) {
+              router.replace("/client/complete")
+              return
+            }
+
+            const cliente = await clienteRes.json()
+            router.replace(isClientComplete(cliente) ? "/client/home" : "/client/complete")
+            return
+          }
+
+          if (authData.tipo === "bartender") {
+            const bartenderRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/bartenders/me/`, {
+              headers: { Authorization: `Bearer ${authData.access}` },
+            })
+
+            if (!bartenderRes.ok) {
+              router.replace("/bartender/complete")
+              return
+            }
+
+            const bartender = await bartenderRes.json()
+            router.replace(isBartenderComplete(bartender) ? "/bartender/home" : "/bartender/complete")
+            return
+          }
+
+          router.replace("/")
           return
         }
 

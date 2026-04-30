@@ -36,6 +36,30 @@ export function RegisterForm() {
 
       await createUser({ name, email, password, tipo })
 
+      const authRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/token/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (!authRes.ok) {
+        alert("Usuário criado, mas não foi possível autenticar.")
+        router.push("/login")
+        return
+      }
+
+      const authData = await authRes.json()
+
+      await fetch("/api/auth/set-cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: authData.access,
+          refresh: authData.refresh,
+          tipo: authData.tipo,
+        }),
+      })
+
       alert("Usuário criado com sucesso!")
       setName("")
       setEmail("")
@@ -43,6 +67,16 @@ export function RegisterForm() {
       setConfirmPassword("")
       setTipo("")
       setAgreed(false)
+
+      if (authData.tipo === "cliente") {
+        router.push("/client/complete")
+        return
+      }
+
+      if (authData.tipo === "bartender") {
+        router.push("/bartender/complete")
+        return
+      }
 
       router.push("/login")
     } catch (error) {
