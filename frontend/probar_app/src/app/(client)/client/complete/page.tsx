@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { CompleteRegisterForm } from "@/components/client/CompleteRegisterForm"
 import { kaushan } from "@/fonts"
-import { api } from "@/lib/api" // 👈 usa seu axios
+import { api } from "@/services/api" 
 
 export default function CompletePage() {
   const router = useRouter()
