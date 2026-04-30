@@ -35,8 +35,16 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
   const descricaoCurta = descricao.length > 160 ? descricao.slice(0, 160) + "..." : descricao
   const router = useRouter()
 
+  function handleNegociar() {
+    // Passa o email do bartender e as horas escolhidas para a tela de seleção de evento
+    const params = new URLSearchParams({
+      bartender: bartender.email,
+      horas: String(hours),
+    })
+    router.push(`/client/event/choose?${params.toString()}`)
+  }
+
   return (
-    // O wrapper precisa que o pai tenha height definido (ex: height: 100vh ou 100%)
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
 
       {/* Botão voltar */}
@@ -52,7 +60,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
         ‹ Voltar
       </button>
 
-      {/* Grid principal — ocupa o espaço restante, sem overflow */}
+      {/* Grid principal */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "1fr 1fr",
@@ -64,7 +72,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
         {/* ── Coluna esquerda ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", minHeight: 0 }}>
 
-          {/* Foto — altura fixa menor */}
+          {/* Foto */}
           <div style={{
             position: "relative",
             borderRadius: "12px",
@@ -75,12 +83,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             <img
               src={bartender.foto_perfil ?? "/bartender-placeholder.jpg"}
               alt={bartender.nome}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
             />
             <span style={{
               position: "absolute", top: "10px", right: "10px",
@@ -88,11 +91,11 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               borderRadius: "20px", padding: "3px 10px",
               fontSize: "12px", fontWeight: "600",
             }}>
-              ⭐ 4,5
+              ⭐ {bartender.anos_experiencia > 0 ? bartender.anos_experiencia : "—"}
             </span>
           </div>
 
-          {/* Carrossel de drinks — cresce para preencher o espaço */}
+          {/* Carrossel de drinks */}
           <div style={{
             border: "1px solid #eee", borderRadius: "12px",
             padding: "12px 20px",
@@ -137,12 +140,9 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
         </div>
 
         {/* ── Coluna direita ── */}
-        <div style={{
-          display: "flex", flexDirection: "column",
-          gap: "12px", minHeight: 0,
-        }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", minHeight: 0 }}>
 
-          {/* Nome + especialidade + rating */}
+          {/* Nome + especialidade */}
           <div style={{ flexShrink: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
@@ -158,24 +158,12 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
                 ⭐ 4,5
               </span>
             </div>
-
-            <button
-              onClick={() => router.push("/client/chat")}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: "6px",
-                background: "none", border: "1px solid #ddd",
-                borderRadius: "8px", padding: "6px 12px",
-                fontSize: "13px", cursor: "pointer", marginTop: "10px",
-              }}
-            >
-              💬 Chat
-            </button>
           </div>
 
           {/* Separador */}
           <div style={{ height: "1px", background: "#f0f0f0", flexShrink: 0 }} />
 
-          {/* Descrição — ocupa o espaço do meio */}
+          {/* Descrição */}
           <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             <h3 style={{ fontSize: "15px", fontWeight: "700", margin: "0 0 6px", color: "#111" }}>Descrição</h3>
             <p style={{ color: "#555", fontSize: "13px", lineHeight: "1.65", margin: "0 0 4px" }}>
@@ -191,7 +179,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             )}
           </div>
 
-          {/* Box contratação — fixo na base */}
+          {/* Box contratação */}
           <div style={{
             border: "1px solid #eee", borderRadius: "12px",
             padding: "14px 16px", backgroundColor: "#fff", flexShrink: 0,
@@ -215,7 +203,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               </span>
             </div>
 
-            <button onClick={() => router.push("/client/event/choose")} style={{
+            <button onClick={handleNegociar} style={{
               width: "100%", padding: "12px", marginTop: "12px",
               background: "#F5C518", border: "none", borderRadius: "10px",
               fontSize: "15px", fontWeight: "700", cursor: "pointer", color: "#1a1000",
