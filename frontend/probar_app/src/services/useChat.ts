@@ -1,16 +1,16 @@
 /**
  * useChat — hook para integrar o chat com a API Django.
- *
- * Uso futuro com WebSocket (Django Channels) também documentado abaixo.
  */
 
 import { useState, useCallback } from "react"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"
+// Usa o mesmo base que api.ts
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type PropostaStatus = "pendente" | "aceita" | "recusada" | "cancelada" | "substituida"
+type PropostaStatus = "PENDENTE" | "ACEITA" | "RECUSADA" | "CANCELADA" | "SUBSTITUIDA"
 
 export type Proposta = {
   id: number
@@ -28,7 +28,7 @@ export type Proposta = {
 export type Mensagem = {
   id: number
   chat: number
-  remetente: number
+  remetente: number | null
   tipo: string
   conteudo: string
   payload: Record<string, unknown> | null
@@ -42,14 +42,24 @@ export type Chat = {
   criado_em: string
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helper: busca token via rota interna (mesma lógica do api.ts) ────────────
+
+async function getToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/auth/get-token")
+    const data = await res.json()
+    return data.token ?? null
+  } catch {
+    return null
+  }
+}
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("access_token") // ou seu método de auth
+  const token = await getToken()
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
     ...options,
@@ -64,12 +74,13 @@ export function useChat() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Buscar chats do pedido
+  // Buscar chats — suporta resposta paginada { count, results } e array direto
   const getChats = useCallback(async (): Promise<Chat[]> => {
-    return apiFetch("/chats/")
+    const data = await apiFetch<Chat[] | { count: number; results: Chat[] }>("/chats/")
+    return Array.isArray(data) ? data : (data.results ?? [])
   }, [])
 
-  // Buscar mensagens de um chat
+  // Buscar mensagens de um chat específico
   const getMensagens = useCallback(async (chatId: number): Promise<Mensagem[]> => {
     const chat = await apiFetch<Chat>(`/chats/${chatId}/`)
     return chat.mensagens
@@ -151,53 +162,3 @@ export function useChat() {
     enviarContraproposta,
   }
 }
-
-/*
- ┌──────────────────────────────────────────────────────────────────┐
- │  PRÓXIMO PASSO: Chat ao vivo com Django Channels + WebSocket     │
- └──────────────────────────────────────────────────────────────────┘
-
-  1. Backend: instalar channels + daphne
-     pip install channels daphne channels-redis
-
-  2. settings.py:
-     INSTALLED_APPS = [..., "channels"]
-     ASGI_APPLICATION = "core.asgi.application"
-     CHANNEL_LAYERS = {
-       "default": {
-         "BACKEND": "channels_redis.core.RedisChannelLayer",
-         "CONFIG": {"hosts": [("127.0.0.1", 6379)]},
-       }
-     }
-
-  3. Criar consumers/chat_consumer.py:
-     class ChatConsumer(AsyncWebsocketConsumer):
-       async def connect(self):
-         self.chat_id = self.scope["url_route"]["kwargs"]["chat_id"]
-         self.group = f"chat_{self.chat_id}"
-         await self.channel_layer.group_add(self.group, self.channel_name)
-         await self.accept()
-
-       async def receive(self, text_data):
-         data = json.loads(text_data)
-         # salvar mensagem no banco...
-         await self.channel_layer.group_send(self.group, {
-           "type": "chat.message",
-           "mensagem": data,
-         })
-
-       async def chat_message(self, event):
-         await self.send(json.dumps(event["mensagem"]))
-
-  4. No frontend (substituir polling por WebSocket):
-
-     const ws = new WebSocket(`ws://localhost:8000/ws/chat/${chatId}/`)
-     ws.onmessage = (e) => {
-       const nova = JSON.parse(e.data)
-       setMensagens(prev => [...prev, nova])
-     }
-
-  Enquanto não tiver WebSocket:
-  - Usar polling simples: setInterval(() => getMensagens(chatId), 3000)
-  - Ou react-query com refetchInterval: useQuery({ refetchInterval: 3000 })
-*/

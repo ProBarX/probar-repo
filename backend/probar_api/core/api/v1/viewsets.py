@@ -203,7 +203,11 @@ class EventoViewSet(viewsets.ModelViewSet):
         if user.is_staff:
             return Evento.objects.select_related('cliente').all()
         return Evento.objects.filter(cliente__user=user).select_related('cliente')
-
+    
+    def perform_create(self, serializer):
+        cliente = Cliente.objects.get(user=self.request.user)
+        serializer.save(cliente=cliente)
+        
     @extend_schema(
         summary="Criar evento",
         examples=[
