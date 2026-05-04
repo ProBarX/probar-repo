@@ -32,6 +32,15 @@ export const api = axios.create({
     },
 })
 
+export const apiAuth = axios.create({
+    baseURL:
+        process.env.NEXT_PUBLIC_API_URL ||
+        "http://127.0.0.1:8000",
+    headers: {
+        "Content-Type": "application/json",
+    },
+})
+
 api.interceptors.request.use(async (config) => {
     const token = await getToken()
 
