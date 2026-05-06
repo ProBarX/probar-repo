@@ -13,6 +13,16 @@ from .viewsets import (
 	MensagemViewSet,
 )
 
+from django.urls import path
+from core.api.v1.stripe_views import (
+    criar_link_onboarding,
+    verificar_status,
+    pagar_pedido,
+    capturar_pagamento,
+    webhook_stripe
+)
+
+
 router = DefaultRouter()
 
 router.register("users", UserViewSet, basename="users")
@@ -27,4 +37,10 @@ router.register("propostas", PropostaViewSet, basename="propostas")
 router.register("chats", ChatViewSet, basename="chats")
 router.register("mensagens", MensagemViewSet, basename="mensagens")
 
-urlpatterns = router.urls
+urlpatterns = router.urls + [
+    path("stripe/onboarding/", criar_link_onboarding),
+    path("stripe/status/", verificar_status),
+    path("stripe/pagar/<int:pedido_id>/", pagar_pedido),
+    path("stripe/capturar/<int:pagamento_id>/", capturar_pagamento),
+    path("stripe/webhook/", webhook_stripe),
+]

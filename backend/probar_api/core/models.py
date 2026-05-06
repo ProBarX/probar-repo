@@ -158,6 +158,9 @@ class Bartender(BaseModel):
     bairro = models.CharField(max_length=255, blank=True)
     numero = models.CharField(max_length=20, blank=True)
 
+    stripe_account_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_onboarding_completo = models.BooleanField(default=False)
+
     @property
     def media_avaliacoes(self):
         """Calcula a media a partir da tabela Avaliacao"""
@@ -569,6 +572,9 @@ class Pagamento(BaseModel):
     data_pagamento = models.DateTimeField(auto_now_add=True)
     metodo_pagamento = models.CharField(max_length=50, choices=PagamentoMetodo.choices)
     status = models.CharField(max_length=20, choices=PagamentoStatus.choices, default=PagamentoStatus.PENDENTE)
+
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    finalizado_pelo_cliente = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = 'Pagamento'
