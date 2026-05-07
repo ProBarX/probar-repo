@@ -119,6 +119,12 @@ graph LR
 * **PAGO**: captura concluida ou Stripe confirmou sucesso.
 * **CANCELADO**: pagamento falhou ou foi cancelado no Stripe.
 
+### Método de pagamento registrado
+
+- `metodo_pagamento`: representa o **gateway** interno (atualmente `STRIPE`).
+- `stripe_payment_method_type`: guarda o método real usado na Stripe (ex.: `card`, `pix`, `boleto`).
+  Esse valor é preenchido quando o PaymentIntent é consultado (captura, job ou webhook).
+
 ---
 
 ### 1️⃣ Onboarding do Bartender

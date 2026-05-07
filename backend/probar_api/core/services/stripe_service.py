@@ -151,6 +151,29 @@ def _calcular_taxa_plataforma(amount_cents):
     )
 
 
+def _extrair_metodo_pagamento_stripe(intent):
+    if hasattr(intent, "get"):
+        charges = intent.get("charges", {})
+    else:
+        charges = getattr(intent, "charges", {})
+    if isinstance(charges, dict):
+        data = charges.get("data") or []
+        if data:
+            details = data[0].get("payment_method_details") or {}
+            metodo = details.get("type")
+            if metodo:
+                return metodo
+
+    if hasattr(intent, "get"):
+        tipos = intent.get("payment_method_types") or []
+    else:
+        tipos = getattr(intent, "payment_method_types", None) or []
+    if tipos:
+        return tipos[0]
+
+    return None
+
+
 # =========================
 # REGRAS DE LIBERAÇÃO
 # =========================
@@ -221,6 +244,11 @@ def capturar_pagamento_seguro(pagamento):
         pagamento.stripe_payment_intent_id
     )
 
+    metodo_stripe = _extrair_metodo_pagamento_stripe(intent)
+    if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
+        pagamento.stripe_payment_method_type = metodo_stripe
+        pagamento.save(update_fields=["stripe_payment_method_type"])
+
     if intent.status == "requires_capture":
         return capturar_pagamento(pagamento)
 
@@ -260,6 +288,11 @@ def processar_pagamentos_pendentes(logger=None):
             intent = stripe.PaymentIntent.retrieve(
                 pagamento.stripe_payment_intent_id
             )
+
+            metodo_stripe = _extrair_metodo_pagamento_stripe(intent)
+            if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
+                pagamento.stripe_payment_method_type = metodo_stripe
+                pagamento.save(update_fields=["stripe_payment_method_type"])
 
             if intent.status == "requires_capture":
                 capturar_pagamento(pagamento)
@@ -311,8 +344,14 @@ def processar_webhook(event):
         if not pagamento or pagamento.status == PagamentoStatus.PAGO:
             return
 
+        update_fields = ["status"]
+        metodo_stripe = _extrair_metodo_pagamento_stripe(data)
+        if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
+            pagamento.stripe_payment_method_type = metodo_stripe
+            update_fields.append("stripe_payment_method_type")
+
         pagamento.status = PagamentoStatus.PAGO
-        pagamento.save(update_fields=["status"])
+        pagamento.save(update_fields=update_fields)
 
         pedido = pagamento.pedido
         pedido.status = PedidoStatus.PAGO
