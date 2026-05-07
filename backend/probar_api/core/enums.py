@@ -56,10 +56,6 @@ class MensagemTipo(models.TextChoices):
 
 class PagamentoMetodo(models.TextChoices):
     STRIPE = 'STRIPE', 'Stripe'
-    PIX = 'PIX', 'PIX'
-    CARTAO_CREDITO = 'CARTAO_CREDITO', 'Cartão de Crédito'
-    CARTAO_DEBITO = 'CARTAO_DEBITO', 'Cartão de Débito'
-    BOLETO = 'BOLETO', 'Boleto Bancário'
 
 
 class PagamentoStatus(models.TextChoices):
