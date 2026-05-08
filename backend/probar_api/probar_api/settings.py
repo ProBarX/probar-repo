@@ -15,6 +15,12 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 SECRET_KEY = env('SECRET_KEY')
 
 
+STRIPE_SECRET_KEY = env('STRIPE_SECRET_KEY')
+STRIPE_RETURN_URL = env('STRIPE_RETURN_URL')
+STRIPE_REFRESH_URL = env('STRIPE_REFRESH_URL')
+STRIPE_PLATFORM_FEE_PERCENT = env('STRIPE_PLATFORM_FEE_PERCENT')
+
+
 DEBUG = env('DEBUG')
 
 
@@ -38,6 +44,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'drf_spectacular_sidecar',
     'corsheaders',
+    'django_crontab',
 ] + LOCAL_APPS
 
 

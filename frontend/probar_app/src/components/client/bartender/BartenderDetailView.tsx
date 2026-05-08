@@ -4,7 +4,6 @@ import { useState } from "react"
 import type { CSSProperties } from "react"
 import { useRouter } from "next/navigation"
 
-// Espelha exatamente os campos do BartenderSerializer
 export type BartenderDetail = {
   email: string
   nome: string
@@ -33,113 +32,107 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
   const totalPrice = Number(bartender.valor_hora) * hours
   const currentDrink = bartender.drinks[drinkIndex]
   const descricao = bartender.descricao_profissional ?? ""
-  const descricaoCurta = descricao.length > 120 ? descricao.slice(0, 120) + "..." : descricao
+  const descricaoCurta = descricao.length > 160 ? descricao.slice(0, 160) + "..." : descricao
   const router = useRouter()
 
+  function handleNegociar() {
+    // Passa o email do bartender e as horas escolhidas para a tela de seleção de evento
+    const params = new URLSearchParams({
+      bartender: bartender.email,
+      horas: String(hours),
+    })
+    router.push(`/client/event/choose?${params.toString()}`)
+  }
+
   return (
-    <div>
-      {/* Voltar */}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+
+      {/* Botão voltar */}
       <button
         onClick={onBack}
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          color: "#888",
-          fontSize: "14px",
-          marginBottom: "24px",
-          padding: 0,
+          display: "flex", alignItems: "center", gap: "6px",
+          background: "none", border: "none", cursor: "pointer",
+          color: "#888", fontSize: "14px",
+          marginBottom: "16px", padding: 0, flexShrink: 0,
         }}
       >
         ‹ Voltar
       </button>
 
-      <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "28px" }}>
+      {/* Grid principal */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "20px",
+        flex: 1,
+        minHeight: 0,
+      }}>
 
         {/* ── Coluna esquerda ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", minHeight: 0 }}>
 
           {/* Foto */}
-          <img
-            src={bartender.foto_perfil ?? "/bartender-placeholder.jpg"}
-            alt={bartender.nome}
-            style={{ width: "100%", height: "360px", objectFit: "cover", borderRadius: "12px" }}
-          />
+          <div style={{
+            position: "relative",
+            borderRadius: "12px",
+            overflow: "hidden",
+            height: "300px",
+            flexShrink: 0,
+          }}>
+            <img
+              src={bartender.foto_perfil ?? "/bartender-placeholder.jpg"}
+              alt={bartender.nome}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+            <span style={{
+              position: "absolute", top: "10px", right: "10px",
+              backgroundColor: "rgba(255,255,255,0.93)",
+              borderRadius: "20px", padding: "3px 10px",
+              fontSize: "12px", fontWeight: "600",
+            }}>
+              ⭐ {bartender.anos_experiencia > 0 ? bartender.anos_experiencia : "—"}
+            </span>
+          </div>
 
           {/* Carrossel de drinks */}
           <div style={{
-            border: "1px solid #eee",
-            borderRadius: "12px",
-            padding: "16px",
-            minHeight: "200px",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
-            backgroundColor: "#fff",
+            border: "1px solid #eee", borderRadius: "12px",
+            padding: "12px 20px",
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center",
+            position: "relative", backgroundColor: "#fff",
+            flex: 1, minHeight: 0,
           }}>
             {bartender.drinks.length > 1 && (
               <>
-                <button
-                  onClick={() => setDrinkIndex((i) => Math.max(0, i - 1))}
-                  style={navBtnStyle}
-                >
-                  ‹
-                </button>
-                <button
-                  onClick={() => setDrinkIndex((i) => Math.min(bartender.drinks.length - 1, i + 1))}
-                  style={{ ...navBtnStyle, right: "12px", left: "auto" }}
-                >
-                  ›
-                </button>
+                <button onClick={() => setDrinkIndex((i) => Math.max(0, i - 1))} style={navBtnStyle}>‹</button>
+                <button onClick={() => setDrinkIndex((i) => Math.min(bartender.drinks.length - 1, i + 1))} style={{ ...navBtnStyle, right: "12px", left: "auto" }}>›</button>
               </>
             )}
 
             {currentDrink?.foto ? (
-              <img
-                src={currentDrink.foto}
-                alt={currentDrink.nome}
-                style={{ height: "130px", objectFit: "contain", marginBottom: "8px" }}
-              />
+              <img src={currentDrink.foto} alt={currentDrink.nome}
+                style={{ height: "110px", objectFit: "contain", marginBottom: "8px" }} />
             ) : (
               <div style={{
-                width: "90px",
-                height: "90px",
-                background: "#f5f5f5",
-                borderRadius: "8px",
-                marginBottom: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "32px",
-              }}>
-                🍹
-              </div>
+                width: "72px", height: "72px", background: "#f5f5f5",
+                borderRadius: "8px", marginBottom: "8px",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: "30px",
+              }}>🍹</div>
             )}
 
-            <p style={{ fontWeight: "600", margin: 0, fontSize: "14px" }}>
+            <p style={{ fontWeight: "600", margin: 0, fontSize: "13px" }}>
               {currentDrink?.nome ?? "Sem drinks cadastrados"}
             </p>
 
-            {/* Indicadores de posição */}
             {bartender.drinks.length > 1 && (
-              <div style={{ display: "flex", gap: "4px", marginTop: "10px" }}>
+              <div style={{ display: "flex", gap: "4px", marginTop: "8px" }}>
                 {bartender.drinks.map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "50%",
-                      background: i === drinkIndex ? "#F5C518" : "#ddd",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => setDrinkIndex(i)}
-                  />
+                  <div key={i} onClick={() => setDrinkIndex(i)} style={{
+                    width: "6px", height: "6px", borderRadius: "50%",
+                    background: i === drinkIndex ? "#F5C518" : "#ddd", cursor: "pointer",
+                  }} />
                 ))}
               </div>
             )}
@@ -147,53 +140,36 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
         </div>
 
         {/* ── Coluna direita ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", minHeight: 0 }}>
 
-          {/* Nome e experiência */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: "26px", fontWeight: "700" }}>{bartender.nome}</h2>
-              <p style={{ color: "#888", margin: "4px 0 0", fontSize: "14px" }}>{bartender.especialidades}</p>
+          {/* Nome + especialidade */}
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "700", lineHeight: 1.2 }}>{bartender.nome}</h2>
+                <p style={{ color: "#888", margin: "4px 0 0", fontSize: "13px" }}>{bartender.especialidades}</p>
+              </div>
+              <span style={{
+                display: "flex", alignItems: "center", gap: "4px",
+                background: "#f9f9f9", border: "1px solid #eee",
+                borderRadius: "20px", padding: "4px 12px",
+                fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap",
+              }}>
+                ⭐ 4,5
+              </span>
             </div>
-            <span style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              background: "#f9f9f9",
-              border: "1px solid #eee",
-              borderRadius: "20px",
-              padding: "4px 12px",
-              fontSize: "13px",
-              fontWeight: "600",
-              whiteSpace: "nowrap",
-            }}>
-              ⭐ 4,5{/*bartender.total_avaliacoes*/}
-            </span>
           </div>
 
-          {/* Botão chat */}
-          <button onClick={() => router.push("/client/chat")} style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            background: "none",
-            border: "1px solid #ddd",
-            borderRadius: "8px",
-            padding: "7px 14px",
-            fontSize: "13px",
-            cursor: "pointer",
-            width: "fit-content",
-          }}>
-            💬 Chat
-          </button>
+          {/* Separador */}
+          <div style={{ height: "1px", background: "#f0f0f0", flexShrink: 0 }} />
 
           {/* Descrição */}
-          <div>
-            <h3 style={{ fontSize: "16px", fontWeight: "700", margin: "0 0 6px" }}>Descrição</h3>
-            <p style={{ color: "#555", fontSize: "13px", lineHeight: "1.6", margin: "0 0 4px" }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <h3 style={{ fontSize: "15px", fontWeight: "700", margin: "0 0 6px", color: "#111" }}>Descrição</h3>
+            <p style={{ color: "#555", fontSize: "13px", lineHeight: "1.65", margin: "0 0 4px" }}>
               {expanded ? descricao : descricaoCurta}
             </p>
-            {descricao.length > 120 && (
+            {descricao.length > 160 && (
               <span
                 onClick={() => setExpanded((e) => !e)}
                 style={{ color: "#d4860a", fontSize: "13px", cursor: "pointer" }}
@@ -205,22 +181,21 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
 
           {/* Box contratação */}
           <div style={{
-            border: "1px solid #eee",
-            borderRadius: "12px",
-            padding: "16px",
-            marginTop: "auto",
-            backgroundColor: "#fff",
+            border: "1px solid #eee", borderRadius: "12px",
+            padding: "14px 16px", backgroundColor: "#fff", flexShrink: 0,
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "#888", marginBottom: "12px" }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between",
+              fontSize: "12px", color: "#aaa", marginBottom: "10px",
+            }}>
               <span>Hora(s)</span>
               <span>Valor</span>
             </div>
+
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <button onClick={() => setHours((h) => Math.max(1, h - 1))} style={ctrlBtnStyle}>−</button>
-                <span style={{ fontWeight: "600", fontSize: "16px", minWidth: "20px", textAlign: "center" }}>
-                  {hours}
-                </span>
+                <span style={{ fontWeight: "600", fontSize: "16px", minWidth: "20px", textAlign: "center" }}>{hours}</span>
                 <button onClick={() => setHours((h) => Math.min(24, h + 1))} style={ctrlBtnStyle}>+</button>
               </div>
               <span style={{ fontWeight: "700", fontSize: "18px" }}>
@@ -228,22 +203,16 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               </span>
             </div>
 
-            <button style={{
-              width: "100%",
-              padding: "13px",
-              marginTop: "14px",
-              background: "#F5C518",
-              border: "none",
-              borderRadius: "10px",
-              fontSize: "15px",
-              fontWeight: "700",
-              cursor: "pointer",
-              color: "#1a1000",
+            <button onClick={handleNegociar} style={{
+              width: "100%", padding: "12px", marginTop: "12px",
+              background: "#F5C518", border: "none", borderRadius: "10px",
+              fontSize: "15px", fontWeight: "700", cursor: "pointer", color: "#1a1000",
             }}>
               Negociar
             </button>
           </div>
         </div>
+
       </div>
     </div>
   )
@@ -261,8 +230,8 @@ const navBtnStyle: CSSProperties = {
 }
 
 const ctrlBtnStyle: CSSProperties = {
-  width: "28px",
-  height: "28px",
+  width: "30px",
+  height: "30px",
   borderRadius: "50%",
   border: "1px solid #ddd",
   background: "none",

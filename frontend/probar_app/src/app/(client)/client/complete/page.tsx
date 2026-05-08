@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { CompleteRegisterForm } from "@/components/client/CompleteRegisterForm"
 import { kaushan } from "@/fonts"
+import { api } from "@/services/api" 
 
 export default function CompletePage() {
   const router = useRouter()
@@ -13,25 +14,18 @@ export default function CompletePage() {
   useEffect(() => {
     async function checkUserData() {
       try {
-        const tokenRes = await fetch("/api/auth/get-token")
-        const { token } = await tokenRes.json()
+        // 🔥 agora usa axios → interceptor injeta token automaticamente
+        const res = await api.get("/clientes/me/")
+        const userData = res.data
 
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/clientes/me/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-
-        if (res.ok) {
-          const userData = await res.json()
-          // Se o usuário já tem data_nascimento salva, redireciona para home
-          if (userData.data_nascimento) {
-            router.push("/client/home")
-          } else {
-            setShowForm(true)
-          }
+        if (userData.data_nascimento) {
+          router.push("/client/home")
         } else {
           setShowForm(true)
         }
-      } catch {
+      } catch (error: any) {
+        // 🔍 se der erro (401, etc), mostra form
+        console.error("Erro ao buscar usuário:", error.response?.data)
         setShowForm(true)
       } finally {
         setLoading(false)
@@ -43,13 +37,15 @@ export default function CompletePage() {
 
   if (loading) {
     return (
-      <div style={{
-        minHeight: "100vh",
-        backgroundColor: "#f5f5f5",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundColor: "#f5f5f5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <p>Carregando...</p>
       </div>
     )
@@ -60,35 +56,46 @@ export default function CompletePage() {
   }
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      backgroundColor: "#f5f5f5",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "24px",
-    }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#f5f5f5",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+      }}
+    >
       <div style={{ textAlign: "center", marginBottom: "24px" }}>
-        <h1 className={kaushan.className} style={{ fontSize: "32px", color: "#F5C518", margin: 0 }}>
+        <h1
+          className={kaushan.className}
+          style={{ fontSize: "32px", color: "#F5C518", margin: 0 }}
+        >
           ProBar
         </h1>
-        <p style={{ color: "#666", margin: "4px 0 0" }}>Complete seu cadastro para continuar</p>
+        <p style={{ color: "#666", margin: "4px 0 0" }}>
+          Complete seu cadastro para continuar
+        </p>
       </div>
 
-      <div style={{
-        backgroundColor: "#fff",
-        borderRadius: "12px",
-        padding: "40px 32px",
-        width: "100%",
-        maxWidth: "460px",
-        boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
-      }}>
+      <div
+        style={{
+          backgroundColor: "#fff",
+          borderRadius: "12px",
+          padding: "40px 32px",
+          width: "100%",
+          maxWidth: "460px",
+          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+        }}
+      >
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <h2 style={{ fontSize: "22px", fontWeight: "700", margin: "0 0 8px" }}>
             Informações pessoais
           </h2>
-          <p style={{ color: "#888", margin: 0 }}>Adicione sua foto e informações básicas</p>
+          <p style={{ color: "#888", margin: 0 }}>
+            Adicione sua foto e informações básicas
+          </p>
         </div>
 
         <CompleteRegisterForm />

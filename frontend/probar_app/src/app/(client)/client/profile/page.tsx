@@ -1,30 +1,60 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import { api } from "@/services/api"
 import { ProfileView, type ClientProfile } from "@/components/client/profile/ProfileView"
 
-// ─── Mock estático ────────────────────────────────────────────────────────────
-// Futuramente: remover e buscar via api.get("/clientes/me/")
-const MOCK_PROFILE: ClientProfile = {
-  nome: "Antônio Félix",
-  email: "toinhofelix@gmail.com",
-  data_nascimento: "20/06/2006",
-  membro_desde: "11/03/2026",
-  total_eventos: 2,
-  eventos: [
-    { nome: "Festa de aniversário", data: "15 Mar 2025", status: "Concluído" },
-    { nome: "Happy Hour",           data: "28 Fev 2026", status: "Concluído" },
-    { nome: "Casamento",            data: "10 Abr 2026", status: "Em andamento" },
-  ],
-}
-// ─────────────────────────────────────────────────────────────────────────────
-
 export default function ProfilePage() {
-  // TODO (quando o backend estiver pronto):
-  // const [profile, setProfile] = useState<ClientProfile | null>(null)
-  // useEffect(() => {
-  //   api.get<ClientProfile>("/clientes/me/")
-  //     .then(({ data }) => setProfile(data))
-  // }, [])
+  const [profile, setProfile] = useState<ClientProfile | null>(null)
 
-  return <ProfileView profile={MOCK_PROFILE} />
+  useEffect(() => {
+    Promise.all([
+      api.get("/clientes/me/"),
+      api.get("/eventos/"),
+    ]).then(([{ data: cliente }, { data: eventosRaw }]) => {
+      const rawData = cliente.data_nascimento // "20/02/2002"
+      let dataISO = rawData
+      if (rawData?.includes("/")) {
+        const [dia, mes, ano] = rawData.split("/")
+        dataISO = `${ano}-${mes}-${dia}`
+      }
+      const eventos = "results" in eventosRaw ? eventosRaw.results : eventosRaw
+
+      setProfile({
+        nome:            cliente.name,
+        email:           cliente.email,
+        data_nascimento: dataISO,
+        membro_desde:    formatDate(cliente.criado_em),
+        foto_perfil:     cliente.foto_perfil ?? null,
+        total_eventos:   eventos.length,
+        eventos: eventos.map((e: any) => ({
+          nome:   e.nome,
+          data:   formatDate(e.data),
+          status: e.status,
+        })),
+      })
+    })
+  }, [])
+
+  if (!profile) return <p style={{ color: "#888", textAlign: "center", padding: "40px 0" }}>Carregando perfil...</p>
+
+  return (
+    <ProfileView
+      profile={profile}
+      onUpdate={(updated) => setProfile((prev) => prev ? { ...prev, ...updated } : prev)}
+    />
+  )
+}
+
+function formatDate(iso: string) {
+  if (!iso) return "—"
+
+  const date = new Date(iso)
+  
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  })
 }
