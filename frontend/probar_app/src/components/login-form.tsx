@@ -376,6 +376,7 @@ export function LoginForm() {
         )}
 
         <button
+          id="login-btn"
           onClick={handleLogin}
           disabled={loading}
           className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"

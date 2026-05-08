@@ -25,6 +25,7 @@ export function RoleSelector({ role, title, subtitle, selected = false, disabled
   return (
     <button
       type="button"
+      data-testid={`role-selector-${role}`}
       onClick={() => !disabled && onSelect(role)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') !disabled && onSelect(role) }}
       className={classes}

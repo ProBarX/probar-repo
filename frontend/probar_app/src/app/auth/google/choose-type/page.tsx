@@ -16,7 +16,7 @@ export default function ChooseTypePage() {
       const token = sessionStorage.getItem("google_id_token")
       if (token) {
         setIdToken(token)
-        // do not remove yet; we'll remove after successful submission
+        // Não remover ainda, remover após o envio bem-sucedido.
       } else {
         // Se não houver token, voltar para login (não deve acontecer)
         router.replace("/login")

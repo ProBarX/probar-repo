@@ -6,6 +6,7 @@ import { Eye, EyeOff } from "lucide-react"
 import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
 import { createUser } from "@/services/user"
+import { apiAuth } from "@/services/api"
 
 export function RegisterForm() {
   const router = useRouter()
@@ -36,13 +37,34 @@ export function RegisterForm() {
 
       await createUser({ name, email, password, tipo })
 
-      alert("Usuário criado com sucesso!")
+      const { data: authData } = await apiAuth.post("/api/token/", { email, password })
+
+      await fetch("/api/auth/set-cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: authData.access,
+          refresh: authData.refresh,
+          tipo: authData.tipo,
+        }),
+      })
+
       setName("")
       setEmail("")
       setPassword("")
       setConfirmPassword("")
       setTipo("")
       setAgreed(false)
+
+      if (authData.tipo === "cliente") {
+        router.push("/client/complete")
+        return
+      }
+
+      if (authData.tipo === "bartender") {
+        router.push("/bartender/complete")
+        return
+      }
 
       router.push("/login")
     } catch (error) {
@@ -68,7 +90,6 @@ export function RegisterForm() {
           handleRegister()
         }}
       >
-        {/* Tipo de conta */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-gray-700">Tipo de conta</label>
           <div className="flex flex-col md:flex-row gap-2">
@@ -89,7 +110,6 @@ export function RegisterForm() {
           </div>
         </div>
 
-        {/* Nome */}
         <div className="space-y-1.5">
           <label htmlFor="name" className="text-sm font-medium text-gray-700">Nome</label>
           <input
@@ -101,7 +121,6 @@ export function RegisterForm() {
           />
         </div>
 
-        {/* Email */}
         <div className="space-y-1.5">
           <label htmlFor="email" className="text-sm font-medium text-gray-700">Email</label>
           <input
@@ -114,7 +133,6 @@ export function RegisterForm() {
           />
         </div>
 
-        {/* Senha */}
         <div className="space-y-1.5">
           <label htmlFor="password" className="text-sm font-medium text-gray-700">Senha</label>
           <div className="relative">
@@ -137,7 +155,6 @@ export function RegisterForm() {
           </div>
         </div>
 
-        {/* Confirmar Senha */}
         <div className="space-y-1.5">
           <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">Confirmar Senha</label>
           <div className="relative">
@@ -160,7 +177,6 @@ export function RegisterForm() {
           </div>
         </div>
 
-        {/* Termos */}
         <div className="flex items-start gap-2 text-xs text-gray-500">
           <input
             type="checkbox"
@@ -177,7 +193,6 @@ export function RegisterForm() {
           </label>
         </div>
 
-        {/* Botão */}
         <button
           type="submit"
           className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors"

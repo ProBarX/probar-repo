@@ -108,7 +108,7 @@ export function CompleteRegisterForm() {
             <User size={36} color="#A7A7A7" />
           )}
         </div>
-        <input ref={inputRef} type="file" accept="image/*" onChange={handleImageChange} style={{ display: "none" }} />
+        <input id="input-foto" ref={inputRef} type="file" accept="image/*" onChange={handleImageChange} style={{ display: "none" }} />
         <span style={{ fontSize: "12px", color: "#A7A7A7" }}>Clique aqui para adicionar uma foto ao seu perfil</span>
       </div>
 
@@ -116,6 +116,7 @@ export function CompleteRegisterForm() {
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <label style={{ fontSize: "14px", fontWeight: "500" }}>Data de nascimento</label>
         <input
+          id="data-nascimento"
           type="text"
           placeholder="dd/mm/aaaa"
           value={dataNascimento}
@@ -137,6 +138,7 @@ export function CompleteRegisterForm() {
       )}
 
       <button
+        id="btn-concluir"
         onClick={handleSubmit}
         disabled={loading}
         style={{

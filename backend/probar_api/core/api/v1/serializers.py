@@ -159,11 +159,15 @@ class DrinkSerializer(serializers.ModelSerializer):
 class BartenderSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     nome = serializers.CharField(source="user.name")
+    # user_id é a PK do Bartender (OneToOneField com primary_key=True)
+    # expor explicitamente para o frontend poder usar no POST /pedidos/
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
     drinks = DrinkSerializer(many=True, read_only=True)
 
     class Meta:
         model = Bartender
         fields = [
+            "user_id",
             "email",
             "nome",
             "data_nascimento",
@@ -215,6 +219,7 @@ class EventoSerializer(serializers.ModelSerializer):
             'descricao_evento',
             'status',
         ]
+        read_only_fields = ['cliente']
 
 
 class PropostaSerializer(serializers.ModelSerializer):
