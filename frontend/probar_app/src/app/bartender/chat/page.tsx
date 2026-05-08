@@ -10,8 +10,7 @@ import { api } from "@/services/api"
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type ChatEnriquecido = Chat & {
-  bartender_nome: string
-  bartender_especialidade: string
+  cliente_nome: string
   evento_nome: string
 }
 
@@ -31,7 +30,7 @@ async function getCurrentUserId(): Promise<number> {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export default function ClientChatPage() {
+export default function BartenderChatPage() {
   const router = useRouter()
   const {
     getChats,
@@ -54,17 +53,15 @@ export default function ClientChatPage() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Carrega user_id do token
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId)
   }, [])
 
-  // Carrega chats e enriquece com dados do bartender vindos do PedidoSerializer
+  // Carrega chats e enriquece com cliente_nome e evento_nome do PedidoSerializer
   const carregarChats = useCallback(async () => {
     try {
       const data = await getChats()
 
-      // PedidoSerializer agora retorna bartender_nome, bartender_especialidade e evento_nome
       const { data: pedidosRaw } = await api.get("/pedidos/")
       const pedidos: any[] = Array.isArray(pedidosRaw)
         ? pedidosRaw
@@ -74,8 +71,8 @@ export default function ClientChatPage() {
         const pedido = pedidos.find((p) => p.id === c.pedido)
         return {
           ...c,
-          bartender_nome: pedido?.bartender_nome ?? `Pedido #${c.pedido}`,
-          bartender_especialidade: pedido?.bartender_especialidade ?? "",
+          // PedidoSerializer agora expõe cliente_nome e evento_nome diretamente
+          cliente_nome: pedido?.cliente_nome ?? `Pedido #${c.pedido}`,
           evento_nome: pedido?.evento_nome ?? "",
         }
       })
@@ -92,12 +89,12 @@ export default function ClientChatPage() {
     carregarChats()
   }, [carregarChats])
 
-  // Scroll automático ao fim das mensagens
+  // Scroll automático
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [chats, selectedIdx])
 
-  // Polling de mensagens do chat selecionado
+  // Polling de mensagens
   useEffect(() => {
     if (chats.length === 0) return
     const chatAtual = chats[selectedIdx]
@@ -146,8 +143,7 @@ export default function ClientChatPage() {
     try {
       await aceitarProposta(id)
       updatePropostaLocal(id, "ACEITA")
-      // Redireciona para pagamento após aceitar
-      router.push("/client/payment")
+      // Bartender não paga — apenas aguarda o cliente efetuar o pagamento
     } catch {}
   }
 
@@ -173,7 +169,6 @@ export default function ClientChatPage() {
       await enviarContraproposta(propostaId, dados)
       updatePropostaLocal(propostaId, "SUBSTITUIDA")
       setCounterParaId(null)
-      // Recarrega mensagens para exibir a nova proposta vinda do backend
       const mensagens = await getMensagens(chats[selectedIdx].id)
       setChats((prev) =>
         prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens } : c))
@@ -189,7 +184,6 @@ export default function ClientChatPage() {
     const conteudo = texto.trim()
     setTexto("")
 
-    // Otimismo: adiciona a mensagem localmente antes da resposta da API
     const temp: Mensagem = {
       id: Date.now(),
       chat: chatId,
@@ -209,7 +203,6 @@ export default function ClientChatPage() {
     try {
       await enviarMensagem(chatId, conteudo)
     } catch {
-      // Reverte em caso de erro
       setChats((prev) =>
         prev.map((c, i) =>
           i === selectedIdx
@@ -221,7 +214,7 @@ export default function ClientChatPage() {
     }
   }
 
-  // ── Extrai proposta do payload de uma mensagem card_proposta ───────────────
+  // ── Extrai proposta do payload ─────────────────────────────────────────────
 
   const extractProposta = (msg: Mensagem): Proposta | null => {
     if (msg.tipo !== "card_proposta" || !msg.payload) return null
@@ -246,7 +239,7 @@ export default function ClientChatPage() {
       minute: "2-digit",
     })
   }
-  
+
   // ── Render de cada mensagem ────────────────────────────────────────────────
 
   const renderMensagem = (msg: Mensagem) => {
@@ -339,14 +332,7 @@ export default function ClientChatPage() {
             width: "100%",
           }}
         >
-          <p
-            style={{
-              margin: "0 0 6px",
-              fontWeight: 600,
-              fontSize: "14px",
-              color: "#1a1a1a",
-            }}
-          >
+          <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: "14px", color: "#1a1a1a" }}>
             📅 {p.nome}
           </p>
           <p style={{ margin: 0, color: "#888" }}>
@@ -381,25 +367,10 @@ export default function ClientChatPage() {
           }}
         >
           {msg.conteudo}
-          {/* Botão de ir para pagamento quando proposta for aceita */}
           {isAceite && (
-            <button
-              onClick={() => router.push("/client/payment")}
-              style={{
-                display: "block",
-                marginTop: "8px",
-                padding: "6px 16px",
-                background: "#F5C518",
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: "pointer",
-                color: "#1a1a1a",
-              }}
-            >
-              Ir para pagamento →
-            </button>
+            <p style={{ margin: "6px 0 0", fontSize: "11px", color: "#5a9a3a", fontWeight: 400 }}>
+              Aguardando pagamento do cliente.
+            </p>
           )}
         </div>
       )
@@ -412,15 +383,7 @@ export default function ClientChatPage() {
 
   if (loadingChats) {
     return (
-      <div
-        style={{
-          display: "flex",
-          height: "100%",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#888",
-        }}
-      >
+      <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "#888" }}>
         Carregando conversas...
       </div>
     )
@@ -428,29 +391,9 @@ export default function ClientChatPage() {
 
   if (error) {
     return (
-      <div
-        style={{
-          display: "flex",
-          height: "100%",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#e53e3e",
-          flexDirection: "column",
-          gap: "12px",
-        }}
-      >
+      <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "#e53e3e", flexDirection: "column", gap: "12px" }}>
         <span>{error}</span>
-        <button
-          onClick={carregarChats}
-          style={{
-            padding: "10px 20px",
-            background: "#F5C518",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-            fontWeight: 600,
-          }}
-        >
+        <button onClick={carregarChats} style={{ padding: "10px 20px", background: "#F5C518", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: 600 }}>
           Tentar novamente
         </button>
       </div>
@@ -459,37 +402,11 @@ export default function ClientChatPage() {
 
   if (chats.length === 0) {
     return (
-      <div
-        style={{
-          display: "flex",
-          height: "100%",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#888",
-          flexDirection: "column",
-          gap: "16px",
-        }}
-      >
+      <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "#888", flexDirection: "column", gap: "16px" }}>
         <div style={{ fontSize: "40px" }}>💬</div>
-        <p style={{ margin: 0, fontWeight: 600, fontSize: "16px" }}>
-          Nenhuma conversa ainda
-        </p>
-        <p style={{ margin: 0, fontSize: "14px", color: "#aaa" }}>
-          Contrate um bartender para começar a negociar.
-        </p>
-        <button
-          onClick={() => router.push("/client/home")}
-          style={{
-            padding: "10px 20px",
-            background: "#F5C518",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-            fontWeight: 600,
-          }}
-        >
-          Encontrar bartenders
-        </button>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: "16px" }}>Nenhuma negociação ainda</p>
+        <p style={{ margin: 0, fontSize: "14px", color: "#aaa" }}>Quando um cliente te contratar, a conversa aparece aqui.</p>
+        <button onClick={() => router.back()} style={{ padding: "10px 20px", background: "#F5C518", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: 600 }}>Voltar</button>
       </div>
     )
   }
@@ -497,79 +414,26 @@ export default function ClientChatPage() {
   const conversa = chats[selectedIdx]
 
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100%",
-        width: "100%",
-        overflow: "hidden",
-        fontFamily: "sans-serif",
-      }}
-    >
-      {/* ── Sidebar de conversas ──────────────────────────────────────────── */}
-      <div
-        style={{
-          width: 280,
-          minWidth: 280,
-          borderRight: "1px solid #eee",
-          display: "flex",
-          flexDirection: "column",
-          background: "#fff",
-        }}
-      >
-        {/* Header */}
-        <div
-          style={{
-            padding: "16px 16px 14px",
-            borderBottom: "1px solid #eee",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <button
-            onClick={() => router.back()}
-            style={{
-              background: "none",
-              border: "1px solid #eee",
-              borderRadius: "8px",
-              width: 32,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              flexShrink: 0,
-              color: "#444",
-            }}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M19 12H5M12 5l-7 7 7 7" />
-            </svg>
+    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", fontFamily: "sans-serif" }}>
+
+      {/* Sidebar */}
+      <div style={{ width: 280, minWidth: 280, borderRight: "1px solid #eee", display: "flex", flexDirection: "column", background: "#fff" }}>
+        <div style={{ padding: "16px 16px 14px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", gap: "10px" }}>
+          <button onClick={() => router.back()} style={{ background: "none", border: "1px solid #eee", borderRadius: "8px", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#444" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
           </button>
-          <span style={{ fontWeight: 600, fontSize: "15px" }}>Conversas</span>
+          <span style={{ fontWeight: 600, fontSize: "15px" }}>Negociações</span>
         </div>
 
-        {/* Lista de chats */}
         <div style={{ flex: 1, overflowY: "auto" }}>
           {chats.map((c, i) => {
             const ultima = c.mensagens.at(-1)
             const preview =
-              ultima?.tipo === "card_proposta"
-                ? "📋 Proposta enviada"
-                : ultima?.tipo === "status_update"
-                ? ultima.conteudo
-                : ultima?.conteudo ?? ""
+              ultima?.tipo === "card_proposta" ? "📋 Proposta enviada"
+              : ultima?.tipo === "status_update" ? ultima.conteudo
+              : ultima?.conteudo ?? ""
 
-            // Badge quando bartender enviou contraproposta pendente
-            const temRespostaPendente = c.mensagens.some(
+            const temPendente = c.mensagens.some(
               (m) =>
                 m.tipo === "card_proposta" &&
                 (m.payload as any)?.status === "PENDENTE" &&
@@ -577,78 +441,18 @@ export default function ClientChatPage() {
             )
 
             return (
-              <div
-                key={c.id}
-                onClick={() => {
-                  setSelectedIdx(i)
-                  setCounterParaId(null)
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  padding: "14px 16px",
-                  cursor: "pointer",
-                  borderBottom: "1px solid #f5f5f5",
-                  background: i === selectedIdx ? "#fafafa" : "#fff",
-                  transition: "background 0.15s",
-                }}
+              <div key={c.id} onClick={() => { setSelectedIdx(i); setCounterParaId(null) }}
+                style={{ display: "flex", alignItems: "center", gap: "12px", padding: "14px 16px", cursor: "pointer", borderBottom: "1px solid #f5f5f5", background: i === selectedIdx ? "#fafafa" : "#fff", transition: "background 0.15s" }}
               >
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    background: avatarColors[i % avatarColors.length],
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#fff",
-                    fontWeight: 600,
-                    fontSize: "15px",
-                    flexShrink: 0,
-                    position: "relative",
-                  }}
-                >
-                  {c.bartender_nome[0]?.toUpperCase() ?? "B"}
-                  {temRespostaPendente && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: -2,
-                        right: -2,
-                        width: 12,
-                        height: 12,
-                        borderRadius: "50%",
-                        background: "#F5C518",
-                        border: "2px solid #fff",
-                      }}
-                    />
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: avatarColors[i % avatarColors.length], display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: "15px", flexShrink: 0, position: "relative" }}>
+                  {c.cliente_nome[0]?.toUpperCase() ?? "C"}
+                  {temPendente && (
+                    <div style={{ position: "absolute", top: -2, right: -2, width: 12, height: 12, borderRadius: "50%", background: "#F5C518", border: "2px solid #fff" }} />
                   )}
                 </div>
-
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    style={{
-                      fontWeight: 600,
-                      fontSize: "15px",
-                      margin: "0 0 2px",
-                    }}
-                  >
-                    {c.bartender_nome}
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "13px",
-                      color: "#999",
-                      margin: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {preview}
-                  </p>
+                  <p style={{ fontWeight: 600, fontSize: "15px", margin: "0 0 2px" }}>{c.cliente_nome}</p>
+                  <p style={{ fontSize: "13px", color: "#999", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}</p>
                 </div>
               </div>
             )
@@ -656,142 +460,47 @@ export default function ClientChatPage() {
         </div>
       </div>
 
-      {/* ── Área principal do chat ────────────────────────────────────────── */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          minWidth: 0,
-          background: "#fff",
-        }}
-      >
-        {/* Header do chat */}
-        <div
-          style={{
-            padding: "14px 24px",
-            borderBottom: "1px solid #eee",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
+      {/* Área do chat */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "#fff" }}>
+
+        {/* Header */}
+        <div style={{ padding: "14px 24px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                background: avatarColors[selectedIdx % avatarColors.length],
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#fff",
-                fontWeight: 600,
-                fontSize: "15px",
-              }}
-            >
-              {conversa.bartender_nome[0]?.toUpperCase() ?? "B"}
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: avatarColors[selectedIdx % avatarColors.length], display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: "15px" }}>
+              {conversa.cliente_nome[0]?.toUpperCase() ?? "C"}
             </div>
             <div>
-              <p style={{ fontWeight: 600, margin: 0, fontSize: "17px" }}>
-                {conversa.bartender_nome}
-              </p>
-              <p style={{ fontSize: "12px", color: "#999", margin: 0 }}>
-                {conversa.bartender_especialidade}
-                {conversa.evento_nome && ` · 📅 ${conversa.evento_nome}`}
-              </p>
+              <p style={{ fontWeight: 600, margin: 0, fontSize: "17px" }}>{conversa.cliente_nome}</p>
+              {conversa.evento_nome && (
+                <p style={{ fontSize: "12px", color: "#999", margin: 0 }}>📅 {conversa.evento_nome}</p>
+              )}
             </div>
           </div>
-
-          {/* Badge de status */}
           <PedidoStatusBadge mensagens={conversa.mensagens} />
         </div>
 
         {/* Mensagens */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "20px 24px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "14px",
-            background: "#f9f9f9",
-          }}
-        >
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: "14px", background: "#f9f9f9" }}>
           {conversa.mensagens.map((msg) => renderMensagem(msg))}
-
-          {apiLoading && (
-            <div
-              style={{
-                alignSelf: "center",
-                color: "#aaa",
-                fontSize: "13px",
-              }}
-            >
-              Processando...
-            </div>
-          )}
-
+          {apiLoading && <div style={{ alignSelf: "center", color: "#aaa", fontSize: "13px" }}>Processando...</div>}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
-        <div
-          style={{
-            padding: "14px 24px",
-            borderTop: "1px solid #eee",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            background: "#fff",
-          }}
-        >
+        <div style={{ padding: "14px 24px", borderTop: "1px solid #eee", display: "flex", alignItems: "center", gap: "10px", background: "#fff" }}>
           <input
             type="text"
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleEnviarTexto()}
             placeholder="Digite uma mensagem..."
-            style={{
-              flex: 1,
-              padding: "10px 16px",
-              border: "1px solid #e5e5e5",
-              borderRadius: "24px",
-              fontSize: "15px",
-              outline: "none",
-              background: "#f5f5f5",
-              color: "#1a1a1a",
-            }}
+            style={{ flex: 1, padding: "10px 16px", border: "1px solid #e5e5e5", borderRadius: "24px", fontSize: "15px", outline: "none", background: "#f5f5f5", color: "#1a1a1a" }}
           />
-          <button
-            onClick={handleEnviarTexto}
-            disabled={!texto.trim()}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              background: texto.trim() ? "#F5C518" : "#e5e5e5",
-              border: "none",
-              cursor: texto.trim() ? "pointer" : "not-allowed",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              transition: "background 0.15s",
-            }}
+          <button onClick={handleEnviarTexto} disabled={!texto.trim()}
+            style={{ width: 40, height: 40, borderRadius: "50%", background: texto.trim() ? "#F5C518" : "#e5e5e5", border: "none", cursor: texto.trim() ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.15s" }}
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#1a1a1a"
-              strokeWidth="2"
-            >
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" strokeWidth="2">
+              <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
           </button>
         </div>
@@ -800,69 +509,24 @@ export default function ClientChatPage() {
   )
 }
 
-// ── Badge de status do pedido ──────────────────────────────────────────────────
+// ── Badge de status ────────────────────────────────────────────────────────────
 
 function PedidoStatusBadge({ mensagens }: { mensagens: Mensagem[] }) {
-  const ultimaPropostaMsg = [...mensagens]
-    .reverse()
-    .find((m) => m.tipo === "card_proposta")
-
-  const status = ultimaPropostaMsg
-    ? ((ultimaPropostaMsg.payload as any)?.status ?? "PENDENTE")
-    : null
-
+  const ultimaPropostaMsg = [...mensagens].reverse().find((m) => m.tipo === "card_proposta")
+  const status = ultimaPropostaMsg ? ((ultimaPropostaMsg.payload as any)?.status ?? "PENDENTE") : null
   if (!status) return null
 
-  const configs: Record<
-    string,
-    { label: string; bg: string; color: string; border: string }
-  > = {
-    PENDENTE: {
-      label: "Aguardando resposta",
-      bg: "#fff",
-      color: "#BA7517",
-      border: "1px solid #EF9F27",
-    },
-    ACEITA: {
-      label: "Proposta aceita ✓",
-      bg: "#EAF3DE",
-      color: "#3B6D11",
-      border: "1px solid #97C459",
-    },
-    RECUSADA: {
-      label: "Proposta recusada",
-      bg: "#FCEBEB",
-      color: "#A32D2D",
-      border: "1px solid #E24B4A",
-    },
-    CANCELADA: {
-      label: "Cancelada",
-      bg: "#F1EFE8",
-      color: "#5F5E5A",
-      border: "1px solid #B4B2A9",
-    },
-    SUBSTITUIDA: {
-      label: "Contraproposta enviada",
-      bg: "#E6F1FB",
-      color: "#185FA5",
-      border: "1px solid #85B7EB",
-    },
+  const configs: Record<string, { label: string; bg: string; color: string; border: string }> = {
+    PENDENTE:    { label: "Aguardando resposta",    bg: "#fff",     color: "#BA7517", border: "1px solid #EF9F27" },
+    ACEITA:      { label: "Proposta aceita ✓",      bg: "#EAF3DE",  color: "#3B6D11", border: "1px solid #97C459" },
+    RECUSADA:    { label: "Proposta recusada",       bg: "#FCEBEB",  color: "#A32D2D", border: "1px solid #E24B4A" },
+    CANCELADA:   { label: "Cancelada",               bg: "#F1EFE8",  color: "#5F5E5A", border: "1px solid #B4B2A9" },
+    SUBSTITUIDA: { label: "Contraproposta enviada",  bg: "#E6F1FB",  color: "#185FA5", border: "1px solid #85B7EB" },
   }
 
   const cfg = configs[status] ?? configs.PENDENTE
-
   return (
-    <span
-      style={{
-        fontSize: "12px",
-        padding: "4px 12px",
-        borderRadius: "20px",
-        fontWeight: 500,
-        background: cfg.bg,
-        color: cfg.color,
-        border: cfg.border,
-      }}
-    >
+    <span style={{ fontSize: "12px", padding: "4px 12px", borderRadius: "20px", fontWeight: 500, background: cfg.bg, color: cfg.color, border: cfg.border }}>
       {cfg.label}
     </span>
   )

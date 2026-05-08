@@ -74,7 +74,7 @@ export function RegisterForm() {
   }
 
   const inputClass =
-    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] focus:border-transparent"
+    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F5C518] focus:border-transparent"
 
   return (
     <div className="w-full space-y-5">
@@ -183,7 +183,7 @@ export function RegisterForm() {
             id="terms"
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
-            className="mt-0.5 accent-[#FFC105]"
+            className="mt-0.5 accent-[#F5C518]"
           />
           <label htmlFor="terms">
             Li e concordo com os{" "}
@@ -195,7 +195,7 @@ export function RegisterForm() {
 
         <button
           type="submit"
-          className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors"
+          className="w-full h-10 rounded-lg bg-[#F5C518] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors"
         >
           Cadastrar
         </button>
