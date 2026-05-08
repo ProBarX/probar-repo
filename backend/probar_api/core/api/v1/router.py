@@ -19,6 +19,7 @@ from core.api.v1.stripe_views import (
     verificar_status,
     pagar_pedido,
     capturar_pagamento,
+	finalizar_pagamento,
     webhook_stripe
 )
 
@@ -42,5 +43,6 @@ urlpatterns = router.urls + [
     path("stripe/status/", verificar_status),
     path("stripe/pagar/<int:pedido_id>/", pagar_pedido),
     path("stripe/capturar/<int:pagamento_id>/", capturar_pagamento),
+	path("stripe/finalizar/<int:pagamento_id>/", finalizar_pagamento),
     path("stripe/webhook/", webhook_stripe),
 ]

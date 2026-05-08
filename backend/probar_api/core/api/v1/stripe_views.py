@@ -107,6 +107,38 @@ def capturar_pagamento(request, pagamento_id):
         return Response({"erro": str(e)}, status=400)
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def finalizar_pagamento(request, pagamento_id):
+    try:
+        pagamento = Pagamento.objects.select_related(
+            "pedido__cliente"
+        ).get(id=pagamento_id)
+
+        if not hasattr(request.user, "cliente"):
+            return Response(
+                {"erro": "Apenas clientes podem finalizar pagamento"},
+                status=403,
+            )
+
+        if pagamento.pedido.cliente.user_id != request.user.id:
+            return Response(
+                {"erro": "Você não pode finalizar este pagamento"},
+                status=403,
+            )
+
+        if pagamento.finalizado_pelo_cliente:
+            return Response({"status": "Pagamento já finalizado"})
+
+        pagamento.finalizado_pelo_cliente = True
+        pagamento.save(update_fields=["finalizado_pelo_cliente"])
+
+        return Response({"status": "Pagamento finalizado pelo cliente"})
+
+    except Pagamento.DoesNotExist:
+        return Response({"erro": "Pagamento não encontrado"}, status=404)
+
+
 # =========================
 # WEBHOOK (IMPORTANTE)
 # =========================

@@ -570,7 +570,11 @@ class Pagamento(BaseModel):
     pedido = models.OneToOneField(Pedido, on_delete=models.CASCADE, related_name='pagamento')
     valor = models.DecimalField(max_digits=12, decimal_places=2)
     data_pagamento = models.DateTimeField(auto_now_add=True)
-    metodo_pagamento = models.CharField(max_length=50, choices=PagamentoMetodo.STRIPE, default=PagamentoMetodo.STRIPE)
+    metodo_pagamento = models.CharField(
+        max_length=50,
+        choices=PagamentoMetodo.choices,
+        default=PagamentoMetodo.STRIPE,
+    )
     status = models.CharField(max_length=20, choices=PagamentoStatus.choices, default=PagamentoStatus.PENDENTE)
 
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
