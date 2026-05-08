@@ -55,14 +55,10 @@ class MensagemTipo(models.TextChoices):
 
 
 class PagamentoMetodo(models.TextChoices):
-    PIX = 'PIX', 'PIX'
-    CARTAO_CREDITO = 'CARTAO_CREDITO', 'Cartão de Crédito'
-    CARTAO_DEBITO = 'CARTAO_DEBITO', 'Cartão de Débito'
-    BOLETO = 'BOLETO', 'Boleto Bancário'
+    STRIPE = 'STRIPE', 'Stripe'
 
 
 class PagamentoStatus(models.TextChoices):
     PENDENTE = 'PENDENTE', 'Pendente'
-    APROVADO = 'APROVADO', 'Aprovado'
-    RECUSADO = 'RECUSADO', 'Recusado'
+    PAGO = 'PAGO', 'Pago'
     CANCELADO = 'CANCELADO', 'Cancelado'
