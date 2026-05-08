@@ -96,7 +96,7 @@ export function LoginForm() {
   }
 
   const inputClass =
-    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] focus:border-transparent"
+    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F5C518] focus:border-transparent"
 
   const redirectByRole: Record<'cliente' | 'bartender', string> = {
     cliente: '/client/complete',
@@ -379,7 +379,7 @@ export function LoginForm() {
           id="login-btn"
           onClick={handleLogin}
           disabled={loading}
-          className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"
+          className="w-full h-10 rounded-lg bg-[#F5C518] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"
         >
           {loading ? "Entrando..." : "Login"}
         </button>
@@ -454,7 +454,7 @@ export function LoginForm() {
 
               <button
                 onClick={handleConfirmTipo}
-                className="px-4 py-2 rounded bg-[#FFC105] font-semibold hover:shadow-md hover:-translate-y-0.5 transition disabled:opacity-60"
+                className="px-4 py-2 rounded bg-[#F5C518] font-semibold hover:shadow-md hover:-translate-y-0.5 transition disabled:opacity-60"
                 disabled={loading || !selectedTipo}
               >
                 {loading ? "Conectando..." : "Continuar"}

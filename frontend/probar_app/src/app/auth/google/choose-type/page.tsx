@@ -122,7 +122,7 @@ export default function ChooseTypePage() {
 
         <div className="flex justify-end gap-2">
           <button onClick={() => router.replace("/login")} className="px-4 py-2 rounded border">Cancelar</button>
-          <button onClick={handleSubmit} disabled={loading || !selectedTipo} className="px-4 py-2 rounded bg-[#FFC105] font-semibold disabled:opacity-60">{loading ? "Conectando..." : "Continuar"}</button>
+          <button onClick={handleSubmit} disabled={loading || !selectedTipo} className="px-4 py-2 rounded bg-[#F5C518] font-semibold disabled:opacity-60">{loading ? "Conectando..." : "Continuar"}</button>
         </div>
       </div>
     </div>

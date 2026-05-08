@@ -132,7 +132,7 @@ export function CompleteBartenderRegistrationForm() {
               value={dataNascimento}
               onChange={(e) => setDataNascimento(formatDate(e.target.value))}
               placeholder="dd/mm/aaaa"
-              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#F5C518]"
             />
           </div>
         </>
@@ -148,7 +148,7 @@ export function CompleteBartenderRegistrationForm() {
               value={anosExperiencia}
               onChange={(e) => setAnosExperiencia(e.target.value.replace(/\D/g, ""))}
               placeholder="Ex: 5"
-              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#F5C518]"
             />
           </div>
 
@@ -158,7 +158,7 @@ export function CompleteBartenderRegistrationForm() {
               value={descricaoProfissional}
               onChange={(e) => setDescricaoProfissional(e.target.value)}
               placeholder="Conte um pouco sobre sua experiência, estilo de trabalho e diferenciais..."
-              className="w-full min-h-[140px] border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+              className="w-full min-h-[140px] border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#F5C518]"
             />
             <p className="text-xs text-[#6B7280]">Mínimo de 50 caracteres</p>
           </div>
@@ -176,7 +176,7 @@ export function CompleteBartenderRegistrationForm() {
                   key={item.value}
                   type="button"
                   onClick={() => setEspecialidade(item.value)}
-                  className={`rounded-2xl border p-3 text-left ${especialidade === item.value ? "border-[#FFC105] bg-yellow-50" : "border-[#D1D5DB] bg-white"}`}
+                  className={`rounded-2xl border p-3 text-left ${especialidade === item.value ? "border-[#F5C518] bg-yellow-50" : "border-[#D1D5DB] bg-white"}`}
                 >
                   <span className="block font-medium">{item.label}</span>
                   <span className="text-xs text-[#6B7280]">{item.subtitle}</span>
@@ -196,7 +196,7 @@ export function CompleteBartenderRegistrationForm() {
             value={cep}
             onChange={(e) => setCep(formatCep(e.target.value))}
             placeholder="00000-000"
-            className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+            className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#F5C518]"
           />
         </div>
 
@@ -206,7 +206,7 @@ export function CompleteBartenderRegistrationForm() {
             value={rua}
             onChange={(e) => setRua(e.target.value)}
             placeholder="Nome da rua"
-            className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+            className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#F5C518]"
           />
         </div>
 
@@ -217,7 +217,7 @@ export function CompleteBartenderRegistrationForm() {
               value={bairro}
               onChange={(e) => setBairro(e.target.value)}
               placeholder="Bairro"
-              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#F5C518]"
             />
           </div>
 
@@ -227,7 +227,7 @@ export function CompleteBartenderRegistrationForm() {
               value={numero}
               onChange={(e) => setNumero(e.target.value)}
               placeholder="123"
-              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#FFC105]"
+              className="w-full border border-[#D1D5DB] rounded-xl p-3 outline-none focus:border-[#F5C518]"
             />
           </div>
         </div>
