@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { setToken } from "@/services/api"
 
 function isClientComplete(cliente: { data_nascimento?: string | null } | null) {
   return !!cliente?.data_nascimento
@@ -106,6 +107,8 @@ export default function GoogleCallbackPage() {
             return
           }
 
+          setToken(authData.access)
+
           // salva no servidor via rota interna
           await fetch("/api/auth/set-cookies", {
             method: "POST",
@@ -151,12 +154,12 @@ export default function GoogleCallbackPage() {
         // usuário não existe: redireciona para página full-screen de escolha de tipo
         try {
           sessionStorage.setItem("google_id_token", token)
-        } catch (e) {
+        } catch {
           // ignore
         }
         router.replace("/auth/google/choose-type")
-      } catch (e: any) {
-        setError(e?.message || "Erro ao processar callback do Google")
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Erro ao processar callback do Google")
       } finally {
         setProcessing(false)
       }

@@ -6,7 +6,7 @@ import { Eye, EyeOff } from "lucide-react"
 import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
 import { createUser } from "@/services/user"
-import { apiAuth } from "@/services/api"
+import { apiAuth, setToken } from "@/services/api"
 
 export function RegisterForm() {
   const router = useRouter()
@@ -38,6 +38,7 @@ export function RegisterForm() {
       await createUser({ name, email, password, tipo })
 
       const { data: authData } = await apiAuth.post("/api/token/", { email, password })
+      setToken(authData.access)
 
       await fetch("/api/auth/set-cookies", {
         method: "POST",

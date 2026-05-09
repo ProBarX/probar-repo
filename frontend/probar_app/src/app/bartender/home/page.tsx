@@ -1,3 +1,9 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { api } from "@/services/api"
+
 const tabs = [
   { label: "Todos", active: true },
   { label: "Pendentes", active: false },
@@ -50,6 +56,41 @@ const orders = [
   },
 ]
 
+type StripeStatus = {
+  tem_conta_stripe: boolean
+  onboarding_completo: boolean
+}
+
+type ApiErrorResponse = {
+  status?: number
+  data?: {
+    erro?: string
+    detail?: string
+  }
+}
+
+function getApiErrorResponse(error: unknown): ApiErrorResponse | undefined {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return undefined
+  }
+
+  return (error as { response?: ApiErrorResponse }).response
+}
+
+function isAuthError(error: unknown) {
+  return getApiErrorResponse(error)?.status === 401
+}
+
+function getStripeErrorMessage(error: unknown) {
+  const response = getApiErrorResponse(error)
+
+  if (response?.status === 401) {
+    return "Sua sessao expirou. Entre novamente para conectar a Stripe."
+  }
+
+  return response?.data?.erro || response?.data?.detail || "Nao foi possivel verificar sua conta Stripe."
+}
+
 function statusStyle(status: string) {
   const base = {
     padding: "6px 12px",
@@ -68,8 +109,137 @@ function statusStyle(status: string) {
 }
 
 export default function BartenderHomePage() {
+  const router = useRouter()
+  const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null)
+  const [showStripePopup, setShowStripePopup] = useState(false)
+  const [stripeLoading, setStripeLoading] = useState(false)
+  const [stripeError, setStripeError] = useState<string | null>(null)
+  const [stripeAuthError, setStripeAuthError] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    api.get<StripeStatus>("/stripe/status/")
+      .then(({ data }) => {
+        if (!active) return
+        setStripeStatus(data)
+        setStripeError(null)
+        setStripeAuthError(false)
+        setShowStripePopup(!data.tem_conta_stripe || !data.onboarding_completo)
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setStripeAuthError(isAuthError(error))
+        setStripeError(getStripeErrorMessage(error))
+        setShowStripePopup(true)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  async function handleStripeOnboarding() {
+    setStripeLoading(true)
+    setStripeError(null)
+    setStripeAuthError(false)
+
+    try {
+      const { data } = await api.post<{ url?: string }>("/stripe/onboarding/")
+      if (data.url) {
+        window.location.href = data.url
+        return
+      }
+
+      setStripeError("Nao foi possivel abrir o cadastro da Stripe.")
+    } catch (error: unknown) {
+      setStripeAuthError(isAuthError(error))
+      setStripeError(getStripeErrorMessage(error) || "Nao foi possivel criar sua conta Stripe agora.")
+    } finally {
+      setStripeLoading(false)
+    }
+  }
+
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+      {showStripePopup && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(17, 24, 39, 0.45)",
+            zIndex: 100,
+            display: "grid",
+            placeItems: "center",
+            padding: "24px",
+          }}
+        >
+          <div
+            style={{
+              width: "min(100%, 460px)",
+              background: "#FFFFFF",
+              borderRadius: "8px",
+              border: "1px solid #E5E7EB",
+              boxShadow: "0 24px 60px rgba(15, 23, 42, 0.22)",
+              padding: "24px",
+              display: "grid",
+              gap: "14px",
+            }}
+          >
+            <div>
+              <div>
+                <p style={{ margin: "0 0 4px", color: "#6B7280", fontSize: "13px" }}>Pagamentos</p>
+                <h2 style={{ margin: 0, color: "#111827", fontSize: "24px", fontWeight: 750 }}>
+                  {stripeStatus?.tem_conta_stripe ? "Concluir conta Stripe" : "Criar conta Stripe"}
+                </h2>
+              </div>
+            </div>
+
+            <p style={{ margin: 0, color: "#4B5563", fontSize: "14px", lineHeight: 1.55 }}>
+              {stripeStatus?.tem_conta_stripe
+                ? "Sua conta Stripe ja existe, mas o cadastro precisa ser concluido para receber pagamentos dos clientes."
+                : "Para receber pagamentos dos clientes, voce precisa ter uma conta Stripe conectada ao ProBar. O cadastro e seguro e leva poucos minutos."}
+            </p>
+
+            {stripeError && (
+              <div
+                style={{
+                  border: "1px solid #FECACA",
+                  background: "#FEF2F2",
+                  color: "#991B1B",
+                  borderRadius: "8px",
+                  padding: "10px 12px",
+                  fontSize: "13px",
+                }}
+              >
+                {stripeError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
+              <button
+                type="button"
+                onClick={stripeAuthError ? () => router.push("/login") : handleStripeOnboarding}
+                disabled={stripeLoading}
+                style={{
+                  border: "none",
+                  background: stripeLoading ? "#D1D5DB" : "#F5C518",
+                  borderRadius: "8px",
+                  color: "#111827",
+                  padding: "10px 14px",
+                  fontWeight: 750,
+                  cursor: stripeLoading ? "wait" : "pointer",
+                }}
+              >
+                {stripeAuthError ? "Entrar novamente" : stripeLoading ? "Abrindo..." : "Ir para Stripe"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "24px", marginBottom: "28px" }}>
         <div>
           <p style={{ margin: 0, color: "#374151", fontSize: "14px" }}>Pedidos</p>
@@ -119,7 +289,7 @@ export default function BartenderHomePage() {
       </div>
 
       <div style={{ display: "grid", gap: "18px" }}>
-        {orders.map((order, index) => (
+        {orders.map((order) => (
           <div
             key={order.id}
             style={{

@@ -46,7 +46,7 @@ export type Chat = {
 
 async function getToken(): Promise<string | null> {
   try {
-    const res = await fetch("/api/auth/get-token")
+    const res = await fetch("/api/auth/get-token", { cache: "no-store" })
     const data = await res.json()
     return data.token ?? null
   } catch {
