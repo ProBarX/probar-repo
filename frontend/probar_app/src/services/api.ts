@@ -11,15 +11,13 @@ export function clearTokenCache() {
 }
 
 async function getToken(): Promise<string | null> {
-    if (cachedToken) return cachedToken
-
     try {
-        const res = await fetch("/api/auth/get-token")
+        const res = await fetch("/api/auth/get-token", { cache: "no-store" })
         const data = await res.json()
         cachedToken = data.token ?? null
         return cachedToken
     } catch {
-        return null
+        return cachedToken
     }
 }
 

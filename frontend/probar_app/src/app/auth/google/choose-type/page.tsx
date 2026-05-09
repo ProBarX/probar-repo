@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
+import { setToken } from "@/services/api"
 
 export default function ChooseTypePage() {
   const router = useRouter()
@@ -21,7 +22,7 @@ export default function ChooseTypePage() {
         // Se não houver token, voltar para login (não deve acontecer)
         router.replace("/login")
       }
-    } catch (e) {
+    } catch {
       router.replace("/login")
     }
   }, [router])
@@ -47,13 +48,15 @@ export default function ChooseTypePage() {
         throw new Error(data.detail || "Erro ao autenticar")
       }
 
+      setToken(data.access)
+
       await fetch("/api/auth/set-cookies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: data.access, refresh: data.refresh, tipo: data.tipo }),
       })
 
-      try { sessionStorage.removeItem("google_id_token") } catch(e) {}
+      try { sessionStorage.removeItem("google_id_token") } catch {}
 
       // checar completude do perfil antes de redirecionar
       try {
@@ -98,11 +101,11 @@ export default function ChooseTypePage() {
         }
 
         router.replace('/')
-      } catch (e) {
+      } catch {
         router.replace('/')
       }
-    } catch (e: any) {
-      setError(e.message || "Erro ao criar conta")
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao criar conta")
     } finally {
       setLoading(false)
     }

@@ -358,8 +358,11 @@ class Pedido(BaseModel):
                 'payload': {
                     'proposta_id': proposta.pk,
                     'pedido_id': self.pk,
+                    'remetente': proposta.remetente_id,
                     'tipo': proposta.tipo,
                     'horas': proposta.horas,
+                    'valor_adicional': str(proposta.valor_adicional),
+                    'desconto': str(proposta.desconto),
                     'valor_total': str(proposta.valor_total),
                     'status': proposta.status,
                 }
@@ -381,6 +384,44 @@ class Proposta(BaseModel):
     class Meta:
         ordering = ['-criado_em']
 
+    def chat_payload(self):
+        return {
+            'proposta_id': self.pk,
+            'pedido_id': self.pedido_id,
+            'remetente': self.remetente_id,
+            'tipo': self.tipo,
+            'horas': self.horas,
+            'valor_adicional': str(self.valor_adicional),
+            'desconto': str(self.desconto),
+            'valor_total': str(self.valor_total),
+            'status': self.status,
+        }
+
+    def create_chat_card_message(self):
+        chat = Chat.objects.get_or_create(pedido=self.pedido)[0]
+        Mensagem.objects.create(
+            chat=chat,
+            remetente=None,
+            tipo=MensagemTipo.CARD_PROPOSTA,
+            conteudo='',
+            payload=self.chat_payload(),
+        )
+
+    def sync_chat_card_message(self):
+        mensagens = Mensagem.objects.filter(
+            chat__pedido=self.pedido,
+            tipo=MensagemTipo.CARD_PROPOSTA,
+        )
+
+        for mensagem in mensagens:
+            payload = mensagem.payload or {}
+            if payload.get('proposta_id') != self.pk:
+                continue
+
+            payload.update(self.chat_payload())
+            mensagem.payload = payload
+            mensagem.save(update_fields=['payload'])
+
     def _is_participant(self, user):
         return user == self.pedido.cliente.user or user == self.pedido.bartender.user
 
@@ -397,6 +438,7 @@ class Proposta(BaseModel):
             # marca esta proposta como aceita e atualiza o pedido com snapshot dos valores aprovados
             self.status = PropostaStatus.ACEITA
             self.save()
+            self.sync_chat_card_message()
 
             pedido.proposta_aprovada = self
             pedido.status = PedidoStatus.ACEITO
@@ -441,6 +483,7 @@ class Proposta(BaseModel):
 
             self.status = PropostaStatus.RECUSADA
             self.save()
+            self.sync_chat_card_message()
 
             pedido.status = PedidoStatus.RECUSADO
             pedido.save(update_fields=['status', 'atualizado_em'])
@@ -471,6 +514,7 @@ class Proposta(BaseModel):
 
         self.status = PropostaStatus.CANCELADA
         self.save()
+        self.sync_chat_card_message()
         return self
 
     def counter(self, user, *, horas=None, valor_adicional=None, desconto=None):
@@ -506,6 +550,8 @@ class Proposta(BaseModel):
         # marcar a proposta antiga como substituída
         self.status = PropostaStatus.SUBSTITUIDA
         self.save()
+        self.sync_chat_card_message()
+        nova.create_chat_card_message()
         return nova
 
     @property

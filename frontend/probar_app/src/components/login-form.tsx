@@ -5,6 +5,7 @@ import { useState, useEffect } from "react"
 import { Eye, EyeOff } from "lucide-react"
 import { useRouter } from "next/navigation"
 import RoleSelector from "@/components/RoleSelector"
+import { setToken } from "@/services/api"
 
 export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
@@ -35,6 +36,7 @@ export function LoginForm() {
       }
 
       const data = await res.json()
+      setToken(data.access)
 
       await fetch("/api/auth/set-cookies", {
         method: "POST",
@@ -103,9 +105,15 @@ export function LoginForm() {
     bartender: '/bartender/complete',
   }
 
+  type GoogleLoginResponse = {
+    credential?: string
+    id_token?: string
+    code?: string
+  }
+
   // GoogleLogin/callback: processa id_token recebido e decide fluxo
-  function handleGoogleSuccess(res: any) {
-    const idToken = (res as any)?.credential || (res as any)?.id_token || (res as any)?.code
+  function handleGoogleSuccess(res: GoogleLoginResponse) {
+    const idToken = res.credential || res.id_token || res.code
     if (!idToken) {
       setGoogleError("Não foi possível obter credencial do Google.")
       return
@@ -139,6 +147,8 @@ export function LoginForm() {
             setGoogleError(authData.detail || "Erro ao autenticar")
             return
           }
+
+          setToken(authData.access)
 
           await fetch("/api/auth/set-cookies", {
             method: "POST",
@@ -188,7 +198,7 @@ export function LoginForm() {
               return
             }
             router.push('/')
-          } catch (e) {
+          } catch {
             router.push('/')
           }
           return
@@ -197,7 +207,7 @@ export function LoginForm() {
         // novo usuário -> pedir tipo
         setGoogleIdToken(idToken)
         setShowTipoModal(true)
-      } catch (e) {
+      } catch {
         setGoogleError("Erro ao comunicar com o servidor")
       }
     })()
@@ -240,6 +250,8 @@ export function LoginForm() {
                 return
               }
 
+              setToken(authData.access)
+
               await fetch("/api/auth/set-cookies", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -253,12 +265,12 @@ export function LoginForm() {
 
             setGoogleIdToken(token)
             setShowTipoModal(true)
-          } catch (e) {
+          } catch {
             setGoogleError("Erro ao comunicar com o servidor")
           }
         })()
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [])
@@ -304,6 +316,8 @@ export function LoginForm() {
         throw new Error(data.detail || "Erro ao autenticar no backend")
       }
 
+      setToken(data.access)
+
       // salva tokens via rota interna que já existe
       await fetch("/api/auth/set-cookies", {
         method: "POST",
@@ -314,8 +328,8 @@ export function LoginForm() {
       // redireciona conforme tipo retornado pelo backend (mapeamento centralizado)
       const dest = redirectByRole[data.tipo as 'cliente' | 'bartender'] || '/'
       router.push(dest)
-    } catch (err: any) {
-      setError(err.message || "Erro ao autenticar")
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erro ao autenticar")
     } finally {
       setLoading(false)
       setShowTipoModal(false)

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { createEvento, type EventoForm } from "@/services/useEvent"
 import type { ApiError } from "@/types/user"
 
@@ -23,6 +23,9 @@ const emptyForm: EventoForm = {
 
 export default function AddEventPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const bartenderEmail = searchParams.get("bartender") ?? ""
+  const horas = searchParams.get("horas") ?? ""
   const [form, setForm] = useState<EventoForm>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,12 +34,22 @@ export default function AddEventPage() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  function chooseEventPath(eventoId?: number) {
+    const params = new URLSearchParams()
+    if (bartenderEmail) params.set("bartender", bartenderEmail)
+    if (horas) params.set("horas", horas)
+    if (eventoId) params.set("evento", String(eventoId))
+
+    const query = params.toString()
+    return `/client/event/choose${query ? `?${query}` : ""}`
+  }
+
   async function handleSave() {
     setSaving(true)
     setError(null)
     try {
-      await createEvento(form)
-      router.push("/client/event/choose")
+      const evento = await createEvento(form)
+      router.push(chooseEventPath(evento.id))
     } catch (err) {
       const apiErr = err as ApiError
       const detail = apiErr?.response?.data
@@ -61,7 +74,7 @@ export default function AddEventPage() {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
         <button
-          onClick={() => router.push("/client/event/choose")}
+          onClick={() => router.push(chooseEventPath())}
           style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888" }}
         >
           ‹ <span style={{ fontSize: "18px", fontWeight: 500 }}>Voltar</span>

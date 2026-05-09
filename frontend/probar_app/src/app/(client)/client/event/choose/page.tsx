@@ -11,6 +11,7 @@ export default function ChooseEventPage() {
 
   const bartenderEmail = searchParams.get("bartender") ?? ""
   const horas = Number(searchParams.get("horas") ?? "1")
+  const eventoParam = searchParams.get("evento") ?? ""
 
   const [bartenderId, setBartenderId] = useState<number | null>(null)
   const [eventos, setEventos] = useState<EventoAPI[]>([])
@@ -28,7 +29,11 @@ export default function ChooseEventPage() {
         ])
 
         setEventos(eventosData)
-        if (eventosData.length > 0) setSelectedId(eventosData[0].id)
+        if (eventosData.length > 0) {
+          const eventoId = Number(eventoParam)
+          const selected = eventosData.find((ev) => ev.id === eventoId)
+          setSelectedId(selected?.id ?? eventosData[0].id)
+        }
 
         if (bartenderEmail) {
           const bartenders = Array.isArray(bartendersRaw.data)
@@ -51,7 +56,7 @@ export default function ChooseEventPage() {
     }
 
     init()
-  }, [bartenderEmail])
+  }, [bartenderEmail, eventoParam])
 
   async function handleContinuar() {
     if (!selectedId || !bartenderId) return
@@ -165,7 +170,9 @@ export default function ChooseEventPage() {
           <button
             onClick={(e) => {
               e.stopPropagation()
-              router.push(`/client/event/${ev.id}/edit`)
+              const params = new URLSearchParams(searchParams.toString())
+              params.set("evento", String(ev.id))
+              router.push(`/client/event/${ev.id}/edit?${params.toString()}`)
             }}
             style={{
               fontSize: "15px", color: "#F5C518", fontWeight: 500,

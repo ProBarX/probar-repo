@@ -11,24 +11,43 @@ from django.db import transaction
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
+ACCOUNT_CAPABILITIES = {
+    "card_payments": {"requested": True},
+    "transfers": {"requested": True},
+}
+
 
 # =========================
 # ONBOARDING
 # =========================
+
+def _stripe_attr(obj, key, default=None):
+    if hasattr(obj, "get"):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
 
 def criar_conta_express(email: str):
     return stripe.Account.create(
         type="express",
         country="BR",
         email=email,
+        capabilities=ACCOUNT_CAPABILITIES,
     ).id
 
 
-def criar_link_onboarding(account_id: str):
+def garantir_capacidades_pagamento(account_id: str):
+    return stripe.Account.modify(
+        account_id,
+        capabilities=ACCOUNT_CAPABILITIES,
+    )
+
+
+def criar_link_onboarding(account_id: str, *, return_url=None, refresh_url=None):
     return stripe.AccountLink.create(
         account=account_id,
-        refresh_url=settings.STRIPE_REFRESH_URL,
-        return_url=settings.STRIPE_RETURN_URL,
+        refresh_url=refresh_url or settings.STRIPE_REFRESH_URL,
+        return_url=return_url or settings.STRIPE_RETURN_URL,
         type="account_onboarding",
     )
 
@@ -39,7 +58,10 @@ def verificar_onboarding(bartender):
 
     account = stripe.Account.retrieve(bartender.stripe_account_id)
 
-    completo = account.details_submitted and account.charges_enabled
+    completo = bool(_stripe_attr(account, "details_submitted")) and (
+        bool(_stripe_attr(account, "payouts_enabled"))
+        or bool(_stripe_attr(account, "charges_enabled"))
+    )
 
     if completo and not bartender.stripe_onboarding_completo:
         bartender.stripe_onboarding_completo = True
@@ -59,10 +81,7 @@ def validar_pagamento(pedido, user):
     if pedido.cliente.user_id != user.id:
         raise PermissionError("Você não pode pagar este pedido")
 
-    if hasattr(pedido, "pagamento"):
-        raise ValueError("Pedido já possui pagamento")
-
-    if pedido.status != PedidoStatus.ACEITO:
+    if pedido.status not in [PedidoStatus.ACEITO, PedidoStatus.PAGO]:
         raise ValueError("Pedido não está aceito")
 
     if not pedido.bartender.stripe_account_id:
@@ -71,6 +90,22 @@ def validar_pagamento(pedido, user):
     if not pedido.bartender.stripe_onboarding_completo:
         raise ValueError("Onboarding do bartender incompleto")
     
+
+def reativar_pagamento(pagamento, intent):
+    pagamento.status = PagamentoStatus.PENDENTE
+    pagamento.stripe_payment_intent_id = intent.id
+    pagamento.stripe_payment_method_type = None
+    pagamento.finalizado_pelo_cliente = False
+    pagamento.save(
+        update_fields=[
+            "status",
+            "stripe_payment_intent_id",
+            "stripe_payment_method_type",
+            "finalizado_pelo_cliente",
+        ]
+    )
+    return pagamento, intent
+
 
 def criar_pagamento_seguro(pedido_id, user):
     from core.models import Pedido, Pagamento
@@ -91,12 +126,33 @@ def criar_pagamento_seguro(pedido_id, user):
         if hasattr(pedido, "pagamento"):
             pagamento_existente = pedido.pagamento
 
+            if pagamento_existente.status == PagamentoStatus.PAGO:
+                raise ValueError("Pedido ja foi pago")
+
+            if pagamento_existente.status == PagamentoStatus.CANCELADO:
+                intent = criar_pagamento_intent(
+                    pedido,
+                    idempotency_key=f"pedido_{pedido.id}_retry_{pagamento_existente.id}",
+                )
+                return reativar_pagamento(pagamento_existente, intent)
+
             if not pagamento_existente.stripe_payment_intent_id:
-                raise ValueError("Pagamento existente sem PaymentIntent")
+                intent = criar_pagamento_intent(
+                    pedido,
+                    idempotency_key=f"pedido_{pedido.id}_repair_{pagamento_existente.id}",
+                )
+                return reativar_pagamento(pagamento_existente, intent)
 
             intent = stripe.PaymentIntent.retrieve(
                 pagamento_existente.stripe_payment_intent_id
             )
+
+            if intent.status == "canceled":
+                intent = criar_pagamento_intent(
+                    pedido,
+                    idempotency_key=f"pedido_{pedido.id}_retry_{pagamento_existente.id}",
+                )
+                return reativar_pagamento(pagamento_existente, intent)
 
             return pagamento_existente, intent
 
@@ -112,7 +168,7 @@ def criar_pagamento_seguro(pedido_id, user):
         return pagamento, intent
 
 
-def criar_pagamento_intent(pedido):
+def criar_pagamento_intent(pedido, *, idempotency_key=None):
     amount = _to_cents(pedido.valor_total_aprovado)
     fee_amount = _calcular_taxa_plataforma(amount)
 
@@ -120,11 +176,12 @@ def criar_pagamento_intent(pedido):
         amount=amount,
         currency="brl",
         capture_method="manual",
+        payment_method_types=["card"],
         transfer_data={
             "destination": pedido.bartender.stripe_account_id
         },
         application_fee_amount=fee_amount,
-        idempotency_key=f"pedido_{pedido.id}"
+        idempotency_key=idempotency_key or f"pedido_{pedido.id}"
     )
 
 

@@ -96,6 +96,28 @@ export function CompleteBartenderRegistrationForm() {
         return
       }
 
+      const apiBase =
+        process.env.NEXT_PUBLIC_API_BASE_URL ||
+        (process.env.NEXT_PUBLIC_API_URL
+          ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1`
+          : "http://127.0.0.1:8000/api/v1")
+
+      const onboardingRes = await fetch(`${apiBase}/stripe/onboarding/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (onboardingRes.ok) {
+        const { url } = await onboardingRes.json()
+        if (url) {
+          window.location.href = url
+          return
+        }
+      }
+
       router.push("/bartender/home")
     } catch (error) {
       console.error(error)

@@ -1,6 +1,7 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from core.models import User, Cliente, Bartender, Pedido, Chat
+from core.services.stripe_service import ACCOUNT_CAPABILITIES
 
 import stripe
 from django.conf import settings
@@ -34,11 +35,15 @@ def criar_conta_stripe(sender, instance, created, **kwargs):
     if instance.stripe_account_id:
         return
 
-    account = stripe.Account.create(
-        type="express",
-        country="BR",
-        email=instance.user.email,
-    )
+    try:
+        account = stripe.Account.create(
+            type="express",
+            country="BR",
+            email=instance.user.email,
+            capabilities=ACCOUNT_CAPABILITIES,
+        )
+    except stripe.error.StripeError:
+        return
 
     instance.stripe_account_id = account.id
     instance.save(update_fields=["stripe_account_id"])

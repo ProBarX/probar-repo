@@ -144,10 +144,10 @@ export default function ClientChatPage() {
 
   const handleAceitar = async (id: number) => {
     try {
-      await aceitarProposta(id)
+      const propostaAceita = await aceitarProposta(id)
       updatePropostaLocal(id, "ACEITA")
       // Redireciona para pagamento após aceitar
-      router.push("/client/payment")
+      router.push(`/client/payment?pedido=${propostaAceita.pedido}`)
     } catch {}
   }
 
@@ -366,6 +366,8 @@ export default function ClientChatPage() {
 
     if (msg.tipo === "status_update") {
       const isAceite = msg.conteudo?.toLowerCase().includes("aceita")
+      const pedidoId =
+        typeof msg.payload?.pedido_id === "number" ? msg.payload.pedido_id : null
       return (
         <div
           key={msg.id}
@@ -384,7 +386,7 @@ export default function ClientChatPage() {
           {/* Botão de ir para pagamento quando proposta for aceita */}
           {isAceite && (
             <button
-              onClick={() => router.push("/client/payment")}
+              onClick={() => router.push(pedidoId ? `/client/payment?pedido=${pedidoId}` : "/client/chat")}
               style={{
                 display: "block",
                 marginTop: "8px",
