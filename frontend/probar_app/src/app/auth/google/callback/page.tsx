@@ -12,15 +12,19 @@ function isBartenderComplete(bartender: {
   data_nascimento?: string | null
   anos_experiencia?: number | null
   descricao_profissional?: string | null
+  valor_hora?: string | number | null
   cep?: string | null
   rua?: string | null
   bairro?: string | null
   numero?: string | null
 } | null) {
+  const valorHora = Number(String(bartender?.valor_hora ?? "").replace(",", "."))
+
   return !!(
     bartender?.data_nascimento &&
     bartender?.anos_experiencia &&
     bartender?.descricao_profissional &&
+    valorHora > 0 &&
     bartender?.cep &&
     bartender?.rua &&
     bartender?.bairro &&

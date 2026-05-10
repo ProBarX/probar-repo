@@ -7,6 +7,32 @@ import { useRouter } from "next/navigation"
 import RoleSelector from "@/components/RoleSelector"
 import { setToken } from "@/services/api"
 
+type BartenderProfileCompletion = {
+  data_nascimento?: string | null
+  anos_experiencia?: number | null
+  descricao_profissional?: string | null
+  valor_hora?: string | number | null
+  cep?: string | null
+  rua?: string | null
+  bairro?: string | null
+  numero?: string | null
+}
+
+function isBartenderProfileComplete(bartender: BartenderProfileCompletion) {
+  const valorHora = Number(String(bartender.valor_hora ?? "").replace(",", "."))
+
+  return Boolean(
+    bartender.data_nascimento &&
+      bartender.anos_experiencia &&
+      bartender.descricao_profissional &&
+      valorHora > 0 &&
+      bartender.cep &&
+      bartender.rua &&
+      bartender.bairro &&
+      bartender.numero
+  )
+}
+
 export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
@@ -79,7 +105,7 @@ export function LoginForm() {
         }
 
         const bartender = await bartenderRes.json()
-        const needsComplete = !bartender.data_nascimento || !bartender.anos_experiencia || !bartender.descricao_profissional || !bartender.cep || !bartender.rua || !bartender.bairro || !bartender.numero
+        const needsComplete = !isBartenderProfileComplete(bartender)
 
         if (needsComplete) {
           router.push("/bartender/complete")
@@ -189,7 +215,7 @@ export function LoginForm() {
               }
 
               const bartender = await bartenderRes.json()
-              const needsComplete = !bartender.data_nascimento || !bartender.anos_experiencia || !bartender.descricao_profissional || !bartender.cep || !bartender.rua || !bartender.bairro || !bartender.numero
+              const needsComplete = !isBartenderProfileComplete(bartender)
               if (needsComplete) {
                 router.push('/bartender/complete')
               } else {

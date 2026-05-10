@@ -5,6 +5,32 @@ import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
 import { setToken } from "@/services/api"
 
+type BartenderProfileCompletion = {
+  data_nascimento?: string | null
+  anos_experiencia?: number | null
+  descricao_profissional?: string | null
+  valor_hora?: string | number | null
+  cep?: string | null
+  rua?: string | null
+  bairro?: string | null
+  numero?: string | null
+}
+
+function isBartenderProfileComplete(bartender: BartenderProfileCompletion) {
+  const valorHora = Number(String(bartender.valor_hora ?? "").replace(",", "."))
+
+  return Boolean(
+    bartender.data_nascimento &&
+      bartender.anos_experiencia &&
+      bartender.descricao_profissional &&
+      valorHora > 0 &&
+      bartender.cep &&
+      bartender.rua &&
+      bartender.bairro &&
+      bartender.numero
+  )
+}
+
 export default function ChooseTypePage() {
   const router = useRouter()
   const [idToken, setIdToken] = useState<string | null>(null)
@@ -91,7 +117,7 @@ export default function ChooseTypePage() {
           }
 
           const bartender = await bartenderRes.json()
-          const needsComplete = !bartender.data_nascimento || !bartender.anos_experiencia || !bartender.descricao_profissional || !bartender.cep || !bartender.rua || !bartender.bairro || !bartender.numero
+          const needsComplete = !isBartenderProfileComplete(bartender)
           if (needsComplete) {
             router.replace('/bartender/complete')
           } else {

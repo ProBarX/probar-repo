@@ -58,6 +58,12 @@ export function CompleteRegisterForm() {
       const tokenRes = await fetch("/api/auth/get-token")
       const { token } = await tokenRes.json()
 
+      if (!token) {
+        setError("Sua sessão expirou. Faça login novamente para concluir o cadastro.")
+        router.push("/login")
+        return
+      }
+
       const formData = new FormData()
       formData.append("data_nascimento", dataISO)
       if (file) formData.append("foto_perfil", file)
