@@ -174,6 +174,8 @@ class BartenderSerializer(serializers.ModelSerializer):
             "descricao_profissional",
             "valor_hora",
             "especialidades",
+            "media_avaliacoes",
+            "total_avaliacoes",
             "drinks",
             "cep",
             "rua",

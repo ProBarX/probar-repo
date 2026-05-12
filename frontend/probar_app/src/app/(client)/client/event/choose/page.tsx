@@ -4,16 +4,20 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { fetchEventos, type EventoAPI } from "@/services/useEvent"
 import { api } from "@/services/api"
+import { fetchBartenderByIdentifier } from "@/services/bartenders"
+import type { ApiError } from "@/types/user"
 
 export default function ChooseEventPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const bartenderEmail = searchParams.get("bartender") ?? ""
+  const bartenderParam = searchParams.get("bartender") ?? ""
+  const bartenderNameParam = searchParams.get("bartenderName") ?? ""
   const horas = Number(searchParams.get("horas") ?? "1")
   const eventoParam = searchParams.get("evento") ?? ""
 
   const [bartenderId, setBartenderId] = useState<number | null>(null)
+  const [bartenderName, setBartenderName] = useState(bartenderNameParam)
   const [eventos, setEventos] = useState<EventoAPI[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -23,9 +27,11 @@ export default function ChooseEventPage() {
   useEffect(() => {
     async function init() {
       try {
-        const [eventosData, bartendersRaw] = await Promise.all([
+        const [eventosData, bartender] = await Promise.all([
           fetchEventos(),
-          api.get("/bartenders/"),
+          bartenderParam
+            ? fetchBartenderByIdentifier(bartenderParam)
+            : Promise.resolve(null),
         ])
 
         setEventos(eventosData)
@@ -35,15 +41,10 @@ export default function ChooseEventPage() {
           setSelectedId(selected?.id ?? eventosData[0].id)
         }
 
-        if (bartenderEmail) {
-          const bartenders = Array.isArray(bartendersRaw.data)
-            ? bartendersRaw.data
-            : bartendersRaw.data.results ?? []
-
-          // user_id agora é exposto pelo BartenderSerializer
-          const found = bartenders.find((b: any) => b.email === bartenderEmail)
-          if (found?.user_id) {
-            setBartenderId(found.user_id)
+        if (bartenderParam) {
+          if (bartender?.user_id) {
+            setBartenderId(bartender.user_id)
+            setBartenderName(bartenderNameParam || bartender.nome || bartender.email)
           } else {
             setError("Bartender não encontrado. Volte e tente novamente.")
           }
@@ -56,7 +57,7 @@ export default function ChooseEventPage() {
     }
 
     init()
-  }, [bartenderEmail, eventoParam])
+  }, [bartenderNameParam, bartenderParam, eventoParam])
 
   async function handleContinuar() {
     if (!selectedId || !bartenderId) return
@@ -71,9 +72,10 @@ export default function ChooseEventPage() {
       })
 
       router.push("/client/chat")
-    } catch (err: any) {
-      const detail = err?.response?.data
-        ? JSON.stringify(err.response.data, null, 2)
+    } catch (err) {
+      const apiErr = err as ApiError
+      const detail = apiErr?.response?.data
+        ? JSON.stringify(apiErr.response.data, null, 2)
         : "Verifique os dados e tente novamente."
       setError(`Erro ao criar pedido:\n${detail}`)
     } finally {
@@ -97,7 +99,7 @@ export default function ChooseEventPage() {
         Selecione um evento existente ou crie um novo para enviar ao bartender
       </p>
 
-      {bartenderEmail && (
+      {bartenderParam && (
         <div style={{
           background: "#fffbea", border: "1px solid #EF9F27",
           borderRadius: "10px", padding: "10px 16px",
@@ -105,11 +107,11 @@ export default function ChooseEventPage() {
           display: "flex", gap: "8px", alignItems: "center",
         }}>
           <span>🍸</span>
-          <span><strong>{bartenderEmail}</strong> · {horas}h de serviço</span>
+          <span><strong>{bartenderName || bartenderParam}</strong> · {horas}h de serviço</span>
         </div>
       )}
 
-      {!bartenderEmail && (
+      {!bartenderParam && (
         <div style={{
           background: "#fff5f5", border: "1px solid #E24B4A",
           borderRadius: "10px", padding: "10px 16px",
@@ -186,10 +188,9 @@ export default function ChooseEventPage() {
 
       <button
         onClick={() => {
-          const params = bartenderEmail
-            ? `?bartender=${encodeURIComponent(bartenderEmail)}&horas=${horas}`
-            : ""
-          router.push(`/client/event/new${params}`)
+          const params = new URLSearchParams(searchParams.toString())
+          const query = params.toString()
+          router.push(`/client/event/new${query ? `?${query}` : ""}`)
         }}
         style={{
           color: "#F5C518", fontSize: "16px", fontWeight: 500,

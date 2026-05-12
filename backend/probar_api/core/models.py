@@ -166,6 +166,9 @@ class Bartender(BaseModel):
     @property
     def media_avaliacoes(self):
         """Calcula a media a partir da tabela Avaliacao"""
+        if hasattr(self, 'media_avaliacoes_calc'):
+            return round(self.media_avaliacoes_calc or 0.0, 2)
+
         from django.db.models import Avg
         resultado = self.pedidos.filter(
             status=PedidoStatus.CONCLUIDO,
@@ -176,6 +179,9 @@ class Bartender(BaseModel):
     @property
     def total_avaliacoes(self):
         """Total de avaliacoes recebidas"""
+        if hasattr(self, 'total_avaliacoes_calc'):
+            return self.total_avaliacoes_calc or 0
+
         return Avaliacao.objects.filter(
             pedido__bartender=self,
             pedido__status=PedidoStatus.CONCLUIDO
