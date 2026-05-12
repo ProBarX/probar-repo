@@ -21,17 +21,9 @@ export function BartenderCard({ name, specialty, price, rating, totalReviews, im
     }}>
       <div style={{ position: "relative" }}>
         <img src={image} alt={name} style={{ width: "100%", height: "160px", objectFit: "cover" }} />
-        <span style={{
-          position: "absolute",
-          top: "8px",
-          right: "8px",
-          backgroundColor: "#fff",
-          borderRadius: "20px",
-          padding: "2px 8px",
-          fontSize: "12px",
-          fontWeight: "bold",
-        }}>
-          ★ {ratingText}{reviewsText}
+        <span style={ratingBadgeStyle}>
+          <span style={ratingStarStyle}>{"\u2605"}</span>
+          {ratingText}{reviewsText}
         </span>
       </div>
 
@@ -60,4 +52,25 @@ export function BartenderCard({ name, specialty, price, rating, totalReviews, im
       </div>
     </div>
   )
+}
+
+const ratingBadgeStyle = {
+  position: "absolute" as const,
+  top: "8px",
+  right: "8px",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  backgroundColor: "#FFF7D6",
+  border: "1px solid #F5C518",
+  borderRadius: "20px",
+  padding: "3px 9px",
+  color: "#111827",
+  fontSize: "12px",
+  fontWeight: "bold",
+}
+
+const ratingStarStyle = {
+  color: "#F5C518",
+  lineHeight: 1,
 }
