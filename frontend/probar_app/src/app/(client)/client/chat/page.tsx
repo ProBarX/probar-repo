@@ -15,7 +15,70 @@ type ChatEnriquecido = Chat & {
   evento_nome: string
 }
 
+type PedidoResumo = {
+  id: number
+  bartender_nome?: string
+  bartender_especialidade?: string
+  evento_nome?: string
+}
+
+type PropostaPayload = {
+  proposta_id?: number
+  pedido_id?: number
+  remetente?: number
+  tipo?: string
+  horas?: number
+  valor_adicional?: string | number
+  desconto?: string | number
+  valor_total?: string | number
+  status?: string
+}
+
+type EventoPayload = {
+  nome?: string
+  data?: string
+  hora_inicio?: string
+  hora_fim?: string
+  quantidade_convidados?: number
+  descricao_evento?: string
+}
+
 const avatarColors = ["#3C3489", "#0F6E56", "#993C1D", "#185FA5", "#854F0B"]
+
+function getResults<T>(data: T[] | { results?: T[] }): T[] {
+  return Array.isArray(data) ? data : data.results ?? []
+}
+
+function getPropostaPayload(payload: Mensagem["payload"]): PropostaPayload | null {
+  return payload ? (payload as PropostaPayload) : null
+}
+
+function getEventoPayload(payload: Mensagem["payload"]): EventoPayload | null {
+  return payload ? (payload as EventoPayload) : null
+}
+
+function toNumber(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(",", "."))
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+  return fallback
+}
+
+function toPropostaStatus(status: unknown): Proposta["status"] {
+  if (
+    status === "PENDENTE" ||
+    status === "ACEITA" ||
+    status === "RECUSADA" ||
+    status === "CANCELADA" ||
+    status === "SUBSTITUIDA"
+  ) {
+    return status
+  }
+
+  return "PENDENTE"
+}
 
 async function getCurrentUserId(): Promise<number> {
   try {
@@ -64,19 +127,18 @@ export default function ClientChatPage() {
     try {
       const data = await getChats()
 
-      // PedidoSerializer agora retorna bartender_nome, bartender_especialidade e evento_nome
-      const { data: pedidosRaw } = await api.get("/pedidos/")
-      const pedidos: any[] = Array.isArray(pedidosRaw)
-        ? pedidosRaw
-        : pedidosRaw.results ?? []
+      const { data: pedidosRaw } = await api.get<PedidoResumo[] | { results?: PedidoResumo[] }>("/pedidos/")
+      const pedidos = getResults(pedidosRaw)
 
       const enriquecidos: ChatEnriquecido[] = data.map((c) => {
         const pedido = pedidos.find((p) => p.id === c.pedido)
+        const bartenderNome = c.bartender_nome?.trim() || pedido?.bartender_nome?.trim() || "Bartender"
+
         return {
           ...c,
-          bartender_nome: pedido?.bartender_nome ?? `Pedido #${c.pedido}`,
-          bartender_especialidade: pedido?.bartender_especialidade ?? "",
-          evento_nome: pedido?.evento_nome ?? "",
+          bartender_nome: bartenderNome,
+          bartender_especialidade: c.bartender_especialidade ?? pedido?.bartender_especialidade ?? "",
+          evento_nome: c.evento_nome ?? pedido?.evento_nome ?? "",
         }
       })
 
@@ -97,17 +159,17 @@ export default function ClientChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [chats, selectedIdx])
 
+  const selectedChatId = chats[selectedIdx]?.id
+
   // Polling de mensagens do chat selecionado
   useEffect(() => {
-    if (chats.length === 0) return
-    const chatAtual = chats[selectedIdx]
-    if (!chatAtual) return
+    if (!selectedChatId) return
 
     const poll = async () => {
       try {
-        const mensagens = await getMensagens(chatAtual.id)
+        const mensagens = await getMensagens(selectedChatId)
         setChats((prev) =>
-          prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens } : c))
+          prev.map((c) => (c.id === selectedChatId ? { ...c, mensagens } : c))
         )
       } catch {}
     }
@@ -117,7 +179,7 @@ export default function ClientChatPage() {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
-  }, [selectedIdx, chats.length, getMensagens])
+  }, [getMensagens, selectedChatId])
 
   // ── Ações de proposta ──────────────────────────────────────────────────────
 
@@ -128,12 +190,13 @@ export default function ClientChatPage() {
         return {
           ...c,
           mensagens: c.mensagens.map((m) => {
+            const payload = getPropostaPayload(m.payload)
             if (
               m.tipo === "card_proposta" &&
-              m.payload &&
-              (m.payload as any).proposta_id === propostaId
+              payload &&
+              payload.proposta_id === propostaId
             ) {
-              return { ...m, payload: { ...(m.payload as any), status: novoStatus } }
+              return { ...m, payload: { ...payload, status: novoStatus } as Record<string, unknown> }
             }
             return m
           }),
@@ -225,7 +288,9 @@ export default function ClientChatPage() {
 
   const extractProposta = (msg: Mensagem): Proposta | null => {
     if (msg.tipo !== "card_proposta" || !msg.payload) return null
-    const p = msg.payload as any
+    const p = getPropostaPayload(msg.payload)
+    if (!p?.proposta_id || !p.pedido_id) return null
+
     return {
       id: p.proposta_id,
       pedido: p.pedido_id,
@@ -234,9 +299,9 @@ export default function ClientChatPage() {
       horas: p.horas ?? 0,
       valor_adicional: String(p.valor_adicional ?? "0.00"),
       desconto: String(p.desconto ?? "0.00"),
-      status: p.status ?? "PENDENTE",
+      status: toPropostaStatus(p.status),
       criado_em: msg.criado_em,
-      valor_total: parseFloat(String(p.valor_total ?? "0")),
+      valor_total: toNumber(p.valor_total),
     }
   }
 
@@ -322,7 +387,7 @@ export default function ClientChatPage() {
     }
 
     if (msg.tipo === "card_evento") {
-      const p = msg.payload as any
+      const p = getEventoPayload(msg.payload)
       if (!p) return null
       return (
         <div
@@ -572,10 +637,14 @@ export default function ClientChatPage() {
 
             // Badge quando bartender enviou contraproposta pendente
             const temRespostaPendente = c.mensagens.some(
-              (m) =>
-                m.tipo === "card_proposta" &&
-                (m.payload as any)?.status === "PENDENTE" &&
-                (m.payload as any)?.remetente !== currentUserId
+              (m) => {
+                const payload = getPropostaPayload(m.payload)
+                return (
+                  m.tipo === "card_proposta" &&
+                  payload?.status === "PENDENTE" &&
+                  payload.remetente !== currentUserId
+                )
+              }
             )
 
             return (
@@ -809,9 +878,8 @@ function PedidoStatusBadge({ mensagens }: { mensagens: Mensagem[] }) {
     .reverse()
     .find((m) => m.tipo === "card_proposta")
 
-  const status = ultimaPropostaMsg
-    ? ((ultimaPropostaMsg.payload as any)?.status ?? "PENDENTE")
-    : null
+  const payload = ultimaPropostaMsg ? getPropostaPayload(ultimaPropostaMsg.payload) : null
+  const status = payload?.status ?? null
 
   if (!status) return null
 

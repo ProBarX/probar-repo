@@ -3,11 +3,15 @@ type BartenderCardProps = {
   specialty: string
   price: number
   rating: number
+  totalReviews: number
   image: string
   onSelect?: () => void
 }
 
-export function BartenderCard({ name, specialty, price, rating, image, onSelect }: BartenderCardProps) {
+export function BartenderCard({ name, specialty, price, rating, totalReviews, image, onSelect }: BartenderCardProps) {
+  const ratingText = rating > 0 ? rating.toFixed(1) : "Novo"
+  const reviewsText = totalReviews > 0 ? ` (${totalReviews})` : ""
+
   return (
     <div style={{
       borderRadius: "12px",
@@ -27,7 +31,7 @@ export function BartenderCard({ name, specialty, price, rating, image, onSelect 
           fontSize: "12px",
           fontWeight: "bold",
         }}>
-          ⭐ {rating}
+          ★ {ratingText}{reviewsText}
         </span>
       </div>
 
