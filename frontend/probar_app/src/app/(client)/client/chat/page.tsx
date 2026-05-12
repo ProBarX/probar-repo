@@ -44,6 +44,7 @@ type EventoPayload = {
 }
 
 const avatarColors = ["#3C3489", "#0F6E56", "#993C1D", "#185FA5", "#854F0B"]
+const CHAT_HEADER_HEIGHT = 69
 
 function getResults<T>(data: T[] | { results?: T[] }): T[] {
   return Array.isArray(data) ? data : data.results ?? []
@@ -587,40 +588,16 @@ export default function ClientChatPage() {
         {/* Header */}
         <div
           style={{
+            height: CHAT_HEADER_HEIGHT,
+            boxSizing: "border-box",
+            flexShrink: 0,
             padding: "16px 16px 14px",
             borderBottom: "1px solid #eee",
             display: "flex",
             alignItems: "center",
-            gap: "10px",
+            justifyContent: "center",
           }}
         >
-          <button
-            onClick={() => router.back()}
-            style={{
-              background: "none",
-              border: "1px solid #eee",
-              borderRadius: "8px",
-              width: 32,
-              height: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              flexShrink: 0,
-              color: "#444",
-            }}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M19 12H5M12 5l-7 7 7 7" />
-            </svg>
-          </button>
           <span style={{ fontWeight: 600, fontSize: "15px" }}>Conversas</span>
         </div>
 
@@ -740,6 +717,9 @@ export default function ClientChatPage() {
         {/* Header do chat */}
         <div
           style={{
+            height: CHAT_HEADER_HEIGHT,
+            boxSizing: "border-box",
+            flexShrink: 0,
             padding: "14px 24px",
             borderBottom: "1px solid #eee",
             display: "flex",
