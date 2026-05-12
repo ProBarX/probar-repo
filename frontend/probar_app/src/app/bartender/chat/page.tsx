@@ -42,6 +42,7 @@ type EventoPayload = {
 }
 
 const avatarColors = ["#3C3489", "#0F6E56", "#993C1D", "#185FA5", "#854F0B"]
+const CHAT_HEADER_HEIGHT = 69
 
 function getResults<T>(data: T[] | { results?: T[] }): T[] {
   return Array.isArray(data) ? data : data.results ?? []
@@ -496,10 +497,7 @@ export default function BartenderChatPage() {
 
       {/* Sidebar */}
       <div style={{ width: 280, minWidth: 280, borderRight: "1px solid #eee", display: "flex", flexDirection: "column", background: "#fff" }}>
-        <div style={{ padding: "16px 16px 14px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", gap: "10px" }}>
-          <button onClick={() => router.back()} style={{ background: "none", border: "1px solid #eee", borderRadius: "8px", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#444" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
-          </button>
+        <div style={{ height: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, padding: "16px 16px 14px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ fontWeight: 600, fontSize: "15px" }}>Negociações</span>
         </div>
 
@@ -546,7 +544,7 @@ export default function BartenderChatPage() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "#fff" }}>
 
         {/* Header */}
-        <div style={{ padding: "14px 24px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ height: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, padding: "14px 24px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ width: 40, height: 40, borderRadius: "50%", background: avatarColors[selectedIdx % avatarColors.length], display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: "15px" }}>
               {conversa.cliente_nome[0]?.toUpperCase() ?? "C"}

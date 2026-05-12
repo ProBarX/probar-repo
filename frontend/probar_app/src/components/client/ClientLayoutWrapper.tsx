@@ -12,21 +12,27 @@ export function ClientLayoutWrapper({
 }) {
   const pathname = usePathname()
   const isCompletePage = pathname === "/client/complete"
+  const isChatPage = pathname === "/client/chat"
 
   return (
     <div
       style={{
         display: "flex",
+        height: "100dvh",
         minHeight: "100vh",
+        overflow: "hidden",
         backgroundColor: isCompletePage ? "#f5f5f5" : "#FAFAFA",
       }}
     >
-      {!isCompletePage && <Sidebar tipo={tipo} />}
+      {!isCompletePage && <Sidebar tipo={tipo} forceCollapsed={isChatPage} />}
       <main
         style={{
           flex: 1,
-          overflowY: "auto",
-          padding: isCompletePage ? 0 : "24px",
+          minWidth: 0,
+          minHeight: 0,
+          overflowX: "hidden",
+          overflowY: isChatPage ? "hidden" : "auto",
+          padding: isCompletePage || isChatPage ? 0 : "24px",
         }}
       >
         {children}
