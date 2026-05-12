@@ -38,6 +38,10 @@ export type Mensagem = {
 export type Chat = {
   id: number
   pedido: number
+  cliente_nome?: string
+  bartender_nome?: string
+  bartender_especialidade?: string
+  evento_nome?: string
   mensagens: Mensagem[]
   criado_em: string
 }

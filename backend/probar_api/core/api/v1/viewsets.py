@@ -266,12 +266,18 @@ class PedidoViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        queryset = Pedido.objects.select_related(
+            'cliente__user',
+            'bartender__user',
+            'evento',
+            'pagamento',
+        ).prefetch_related('propostas').order_by('-criado_em')
         if user.is_staff:
-            return Pedido.objects.all()
+            return queryset
         # clientes veem pedidos em que são clientes; bartenders veem pedidos onde são bartenders
         if user.tipo == TipoUsuario.CLIENTE:
-            return Pedido.objects.filter(cliente__user=user)
-        return Pedido.objects.filter(bartender__user=user)
+            return queryset.filter(cliente__user=user)
+        return queryset.filter(bartender__user=user)
 
     def perform_create(self, serializer):
         # cliente é o usuário logado
@@ -409,9 +415,14 @@ class ChatViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        queryset = Chat.objects.select_related(
+            'pedido__cliente__user',
+            'pedido__bartender__user',
+            'pedido__evento',
+        ).prefetch_related('mensagens')
         if user.is_staff:
-            return Chat.objects.all()
-        return Chat.objects.filter(models.Q(pedido__cliente__user=user) | models.Q(pedido__bartender__user=user))
+            return queryset
+        return queryset.filter(models.Q(pedido__cliente__user=user) | models.Q(pedido__bartender__user=user))
 
 
 @extend_schema(tags=["Mensagens"])

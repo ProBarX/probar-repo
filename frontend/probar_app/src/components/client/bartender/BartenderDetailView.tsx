@@ -89,13 +89,9 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               alt={bartender.nome}
               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
             />
-            <span style={{
-              position: "absolute", top: "10px", right: "10px",
-              backgroundColor: "rgba(255,255,255,0.93)",
-              borderRadius: "20px", padding: "3px 10px",
-              fontSize: "12px", fontWeight: "600",
-            }}>
-              ⭐ {bartender.media_avaliacoes > 0 ? bartender.media_avaliacoes.toFixed(1).replace(".", ",") : "—"}
+            <span style={floatingRatingBadgeStyle}>
+              <span style={ratingStarStyle}>{"\u2605"}</span>
+              {bartender.media_avaliacoes > 0 ? bartender.media_avaliacoes.toFixed(1).replace(".", ",") : "-"}
             </span>
           </div>
 
@@ -153,13 +149,9 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
                 <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "700", lineHeight: 1.2 }}>{bartender.nome}</h2>
                 <p style={{ color: "#888", margin: "4px 0 0", fontSize: "13px" }}>{bartender.especialidades}</p>
               </div>
-              <span style={{
-                display: "flex", alignItems: "center", gap: "4px",
-                background: "#f9f9f9", border: "1px solid #eee",
-                borderRadius: "20px", padding: "4px 12px",
-                fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap",
-              }}>
-                ⭐ {bartender.media_avaliacoes > 0 ? bartender.media_avaliacoes.toFixed(1).replace(".", ",") : "—"}
+              <span style={ratingBadgeStyle}>
+                <span style={ratingStarStyle}>{"\u2605"}</span>
+                {bartender.media_avaliacoes > 0 ? bartender.media_avaliacoes.toFixed(1).replace(".", ",") : "-"}
               </span>
             </div>
           </div>
@@ -244,4 +236,31 @@ const ctrlBtnStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+}
+
+const ratingBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  background: "#FFF7D6",
+  border: "1px solid #F5C518",
+  borderRadius: "20px",
+  padding: "4px 12px",
+  color: "#111827",
+  fontSize: "13px",
+  fontWeight: "600",
+  whiteSpace: "nowrap",
+}
+
+const floatingRatingBadgeStyle: CSSProperties = {
+  ...ratingBadgeStyle,
+  position: "absolute",
+  top: "10px",
+  right: "10px",
+  fontSize: "12px",
+}
+
+const ratingStarStyle: CSSProperties = {
+  color: "#F5C518",
+  lineHeight: 1,
 }
