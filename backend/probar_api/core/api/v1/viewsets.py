@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample
-from core.enums import TipoUsuario
+from core.enums import PedidoStatus, TipoUsuario
 from core.models import Pedido, Proposta, Chat, Mensagem
 from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PedidoCreateSerializer
 from rest_framework import status
@@ -15,6 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from .permissions import PropostaParticipantPermission
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError
+from django.db.models.functions import Coalesce
 
 @extend_schema(tags=["Usuários"])
 class UserViewSet(viewsets.ModelViewSet):
@@ -120,16 +121,45 @@ class BartenderViewSet(viewsets.ModelViewSet):
     serializer_class = BartenderSerializer
     permission_classes = [IsAuthenticated]
 
+    def _base_queryset(self):
+        return (
+            Bartender.objects
+            .select_related("user")
+            .prefetch_related("drinks")
+            .annotate(
+                media_avaliacoes_calc=Coalesce(
+                    models.Avg(
+                        "pedidos__avaliacao__nota",
+                        filter=models.Q(
+                            pedidos__status=PedidoStatus.CONCLUIDO,
+                            pedidos__avaliacao__isnull=False,
+                        ),
+                    ),
+                    models.Value(0.0),
+                    output_field=models.FloatField(),
+                ),
+                total_avaliacoes_calc=models.Count(
+                    "pedidos__avaliacao",
+                    filter=models.Q(
+                        pedidos__status=PedidoStatus.CONCLUIDO,
+                        pedidos__avaliacao__isnull=False,
+                    ),
+                    distinct=True,
+                ),
+            )
+            .order_by("-media_avaliacoes_calc", "-total_avaliacoes_calc", "-criado_em")
+        )
+
     def get_queryset(self):
         user = self.request.user
 
         if not user.is_authenticated:
-            return Bartender.objects.all()
+            return self._base_queryset()
 
         if user.is_staff or user.tipo == TipoUsuario.CLIENTE:
-            return Bartender.objects.all()
+            return self._base_queryset()
 
-        return Bartender.objects.filter(user=user)
+        return self._base_queryset().filter(user=user)
     
     def get_permissions(self):
         if self.action == 'list':

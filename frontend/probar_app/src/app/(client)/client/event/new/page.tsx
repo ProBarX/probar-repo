@@ -24,7 +24,8 @@ const emptyForm: EventoForm = {
 export default function AddEventPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const bartenderEmail = searchParams.get("bartender") ?? ""
+  const bartenderParam = searchParams.get("bartender") ?? ""
+  const bartenderName = searchParams.get("bartenderName") ?? ""
   const horas = searchParams.get("horas") ?? ""
   const [form, setForm] = useState<EventoForm>(emptyForm)
   const [saving, setSaving] = useState(false)
@@ -36,7 +37,8 @@ export default function AddEventPage() {
 
   function chooseEventPath(eventoId?: number) {
     const params = new URLSearchParams()
-    if (bartenderEmail) params.set("bartender", bartenderEmail)
+    if (bartenderParam) params.set("bartender", bartenderParam)
+    if (bartenderName) params.set("bartenderName", bartenderName)
     if (horas) params.set("horas", horas)
     if (eventoId) params.set("evento", String(eventoId))
 

@@ -1,47 +1,98 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { api } from "@/services/api"
+import { fetchBartendersPage, type Bartender } from "@/services/bartenders"
 import { BannerPromo } from "@/components/client/home/BannerPromo"
 import { CategoryFilter } from "@/components/client/home/CategoryFilter"
 import { BartenderCard } from "@/components/client/home/BartenderCard"
 
-type Bartender = {
-  email: string
-  nome: string
-  valor_hora: number
-  especialidades: string
-  foto_perfil: string | null
-  anos_experiencia: number
-}
-
 export default function HomePage() {
   const router = useRouter()
   const [bartenders, setBartenders] = useState<Bartender[]>([])
+  const [nextUrl, setNextUrl] = useState<string | null>("/bartenders/")
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState("Todos")
   const [search, setSearch] = useState("")
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const isFetchingRef = useRef(false)
 
-  useEffect(() => {
-    api.get<Bartender[] | { results: Bartender[] }>("/bartenders/")
-      .then(({ data }) => {
-        setBartenders("results" in data ? data.results : data)
+  const loadBartenders = useCallback(async (url: string, append = false) => {
+    if (isFetchingRef.current) return
+
+    isFetchingRef.current = true
+    setError(null)
+
+    if (append) {
+      setLoadingMore(true)
+    } else {
+      setLoading(true)
+    }
+
+    try {
+      const page = await fetchBartendersPage(url)
+
+      setBartenders((current) => {
+        if (!append) return page.results
+
+        const loadedIds = new Set(current.map((bartender) => bartender.user_id))
+        const newBartenders = page.results.filter((bartender) => !loadedIds.has(bartender.user_id))
+
+        return [...current, ...newBartenders]
       })
-      .catch(() => setError("Não foi possível carregar os bartenders."))
-      .finally(() => setLoading(false))
+
+      setNextUrl(page.next)
+    } catch {
+      if (append) {
+        setNextUrl(null)
+      } else {
+        setError("Não foi possível carregar os bartenders.")
+      }
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+      isFetchingRef.current = false
+    }
   }, [])
 
+  useEffect(() => {
+    loadBartenders("/bartenders/")
+  }, [loadBartenders])
+
+  useEffect(() => {
+    const target = sentinelRef.current
+    if (!target || !nextUrl || loading || loadingMore) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && nextUrl) {
+          loadBartenders(nextUrl, true)
+        }
+      },
+      { rootMargin: "360px 0px" }
+    )
+
+    observer.observe(target)
+
+    return () => observer.disconnect()
+  }, [loadBartenders, loading, loadingMore, nextUrl])
+
+  const normalizeSpecialty = (value: string) => value.toLowerCase().replace(/[_\s-]+/g, " ").trim()
+
   const filtered = bartenders.filter((b) => {
+    const specialty = normalizeSpecialty(b.especialidades ?? "")
+    const searchTerm = normalizeSpecialty(search)
+
     const matchesCategory =
       activeCategory === "Todos" ||
-      b.especialidades?.toLowerCase().includes(activeCategory.toLowerCase())
+      specialty.includes(normalizeSpecialty(activeCategory))
 
     const matchesSearch =
       search.trim() === "" ||
       b.nome.toLowerCase().includes(search.toLowerCase()) ||
-      b.especialidades?.toLowerCase().includes(search.toLowerCase())
+      specialty.includes(searchTerm)
 
     return matchesCategory && matchesSearch
   })
@@ -119,16 +170,26 @@ export default function HomePage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
           {filtered.map((b, index) => (
             <BartenderCard
-              key={b.email + index}
+              key={b.user_id ?? b.email + index}
               name={b.nome}
               specialty={b.especialidades}
               price={b.valor_hora}
-              rating={b.anos_experiencia}
+              rating={b.media_avaliacoes}
               image={b.foto_perfil ?? "/bartender-placeholder.jpg"}
-              onSelect={() => router.push(`/client/bartender/${encodeURIComponent(b.email)}`)}
+              onSelect={() => router.push(`/client/bartender/${b.user_id}`)}
             />
           ))}
         </div>
+      )}
+
+      {!loading && !error && (
+        <div ref={sentinelRef} style={{ height: "1px" }} />
+      )}
+
+      {loadingMore && (
+        <p style={{ color: "#888", textAlign: "center", padding: "24px 0" }}>
+          Carregando mais bartenders...
+        </p>
       )}
     </div>
   )

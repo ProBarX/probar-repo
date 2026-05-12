@@ -2,8 +2,8 @@
 
 import { use, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { api } from "@/services/api"
 import { BartenderDetailView, type BartenderDetail } from "@/components/client/bartender/BartenderDetailView"
+import { fetchBartenderByIdentifier } from "@/services/bartenders"
 
 type Props = {
   params: Promise<{ email: string }>
@@ -17,18 +17,12 @@ export default function BartenderDetailPage({ params }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const emailDecoded = decodeURIComponent(email)
+    const identifier = decodeURIComponent(email)
 
-    api.get<BartenderDetail[] | { results: BartenderDetail[] }>("/bartenders/")
-      .then(({ data }) => {
-        const list = "results" in data ? data.results : data
-        const found = list.find((b) => b.email === emailDecoded)
-
-        if (found) {
-          setBartender(found)
-        } else {
-          setError("Bartender não encontrado.")
-        }
+    fetchBartenderByIdentifier(identifier)
+      .then((found) => {
+        setBartender(found)
+        if (!found) setError("Bartender não encontrado.")
       })
       .catch(() => setError("Não foi possível carregar o bartender."))
       .finally(() => setLoading(false))
