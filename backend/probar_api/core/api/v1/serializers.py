@@ -6,6 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from decimal import Decimal
 from drf_spectacular.utils import extend_schema_field, OpenApiTypes
 from django.db import transaction
+from django.core.exceptions import ObjectDoesNotExist
 from core.enums import PropostaTipo, PropostaStatus, TipoUsuario
 from decimal import Decimal
 
@@ -157,14 +158,18 @@ class DrinkSerializer(serializers.ModelSerializer):
 
 
 class BartenderSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="pk", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     nome = serializers.CharField(source="user.name")
     drinks = DrinkSerializer(many=True, read_only=True)
+    media_avaliacoes = serializers.SerializerMethodField()
+    total_avaliacoes = serializers.SerializerMethodField()
 
     class Meta:
         model = Bartender
         fields = [
+            "id",
             "user_id",
             "email",
             "nome",
@@ -196,6 +201,18 @@ class BartenderSerializer(serializers.ModelSerializer):
             instance.user.save()
 
         return instance
+
+    @extend_schema_field(OpenApiTypes.NUMBER)
+    def get_media_avaliacoes(self, obj):
+        if hasattr(obj, "media_avaliacoes_order"):
+            return round(float(obj.media_avaliacoes_order or 0), 2)
+        return obj.media_avaliacoes
+
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_total_avaliacoes(self, obj):
+        if hasattr(obj, "total_avaliacoes_order"):
+            return int(obj.total_avaliacoes_order or 0)
+        return obj.total_avaliacoes
 
 
 class EventoSerializer(serializers.ModelSerializer):
@@ -312,15 +329,54 @@ class PedidoSerializer(serializers.ModelSerializer):
     bartender_nome = serializers.CharField(source='bartender.user.name', read_only=True)
     bartender_especialidade = serializers.CharField(source='bartender.especialidades', read_only=True)
     evento_nome = serializers.CharField(source='evento.nome', read_only=True)
+    evento_data = serializers.DateField(source='evento.data', read_only=True)
+    evento_hora_inicio = serializers.TimeField(source='evento.hora_inicio', read_only=True)
+    evento_hora_fim = serializers.TimeField(source='evento.hora_fim', read_only=True)
+    evento_cep = serializers.CharField(source='evento.cep', read_only=True)
+    evento_rua = serializers.CharField(source='evento.rua', read_only=True)
+    evento_numero = serializers.CharField(source='evento.numero', read_only=True)
+    evento_complemento = serializers.CharField(source='evento.complemento', read_only=True)
+    evento_quantidade_convidados = serializers.IntegerField(source='evento.quantidade_convidados', read_only=True)
+    pagamento_id = serializers.SerializerMethodField()
+    pagamento_status = serializers.SerializerMethodField()
+    pagamento_valor = serializers.SerializerMethodField()
+    pagamento_finalizado_pelo_cliente = serializers.SerializerMethodField()
 
     class Meta:
         model = Pedido
         fields = [
             'id', 'cliente', 'cliente_nome',
             'bartender', 'bartender_nome', 'bartender_especialidade',
-            'evento', 'evento_nome',
+            'evento', 'evento_nome', 'evento_data', 'evento_hora_inicio',
+            'evento_hora_fim', 'evento_cep', 'evento_rua', 'evento_numero',
+            'evento_complemento', 'evento_quantidade_convidados',
             'status', 'criado_em', 'propostas',
+            'proposta_aprovada', 'valor_hora_aprovado', 'horas_aprovadas',
+            'valor_total_aprovado', 'pagamento_id', 'pagamento_status',
+            'pagamento_valor', 'pagamento_finalizado_pelo_cliente',
         ]
+
+    def _get_pagamento(self, obj):
+        try:
+            return obj.pagamento
+        except ObjectDoesNotExist:
+            return None
+
+    def get_pagamento_id(self, obj):
+        pagamento = self._get_pagamento(obj)
+        return pagamento.id if pagamento else None
+
+    def get_pagamento_status(self, obj):
+        pagamento = self._get_pagamento(obj)
+        return pagamento.status if pagamento else None
+
+    def get_pagamento_valor(self, obj):
+        pagamento = self._get_pagamento(obj)
+        return str(pagamento.valor) if pagamento else None
+
+    def get_pagamento_finalizado_pelo_cliente(self, obj):
+        pagamento = self._get_pagamento(obj)
+        return pagamento.finalizado_pelo_cliente if pagamento else False
 
 
 class PedidoCreateSerializer(serializers.Serializer):
@@ -397,7 +453,15 @@ class MensagemSerializer(serializers.ModelSerializer):
 
 class ChatSerializer(serializers.ModelSerializer):
     mensagens = MensagemSerializer(many=True, read_only=True)
+    cliente_nome = serializers.CharField(source='pedido.cliente.user.name', read_only=True)
+    bartender_nome = serializers.CharField(source='pedido.bartender.user.name', read_only=True)
+    bartender_especialidade = serializers.CharField(source='pedido.bartender.especialidades', read_only=True)
+    evento_nome = serializers.CharField(source='pedido.evento.nome', read_only=True)
 
     class Meta:
         model = Chat
-        fields = ['id', 'pedido', 'mensagens', 'criado_em']
+        fields = [
+            'id', 'pedido', 'cliente_nome',
+            'bartender_nome', 'bartender_especialidade',
+            'evento_nome', 'mensagens', 'criado_em',
+        ]

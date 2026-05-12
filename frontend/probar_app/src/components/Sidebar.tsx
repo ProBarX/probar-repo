@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, MessageCircle, Star, Bell, User, LogOut, LucideIcon } from "lucide-react"
+import { Bell, Home, LogOut, MessageCircle, Star, User, type LucideIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { kaushan } from "@/fonts"
@@ -16,24 +16,25 @@ type NavItem = {
 
 const navItems: Record<Role, NavItem[]> = {
   cliente: [
-    { label: "Home",         icon: Home,          href: "/client/home" },
-    { label: "Chat",         icon: MessageCircle, href: "/client/chat" },
-    { label: "Feedback",     icon: Star,          href: "/client/feedback" },
-    { label: "Notificações", icon: Bell,          href: "/client/notificacoes" },
+    { label: "Home", icon: Home, href: "/client/home" },
+    { label: "Chat", icon: MessageCircle, href: "/client/chat" },
+    { label: "Feedback", icon: Star, href: "/client/feedback" },
+    { label: "Notificacoes", icon: Bell, href: "/client/notificacoes" },
   ],
   bartender: [
-    { label: "Home",         icon: Home,          href: "/bartender/home" },
-    { label: "Chat",         icon: MessageCircle, href: "/bartender/chat" },
-    { label: "Feedback",     icon: Star,          href: "/bartender/feedback" },
-    { label: "Notificações", icon: Bell,          href: "/bartender/notificacoes" },
+    { label: "Home", icon: Home, href: "/bartender/home" },
+    { label: "Chat", icon: MessageCircle, href: "/bartender/chat" },
+    { label: "Feedback", icon: Star, href: "/bartender/feedback" },
+    { label: "Notificacoes", icon: Bell, href: "/bartender/notificacoes" },
   ],
 }
 
-// Mapeia o tipo (valor do backend) para o prefixo real das rotas
 const routePrefix: Record<Role, string> = {
-  cliente:   "client",
+  cliente: "client",
   bartender: "bartender",
 }
+
+const PRIMARY_YELLOW = "#F5C518"
 
 export function Sidebar({ tipo }: { tipo: Role }) {
   const pathname = usePathname()
@@ -47,30 +48,37 @@ export function Sidebar({ tipo }: { tipo: Role }) {
     router.push("/login")
   }
 
-  const isPerfilActive = pathname === `/${prefix}/perfil`
+  const isPerfilActive = pathname === `/${prefix}/profile`
 
   return (
-    <aside style={{
-      width: "220px",
-      minHeight: "100vh",
-      display: "flex",
-      flexDirection: "column",
-      borderRight: "1px solid #A7A7A7",
-    }}>
-
-      {/* Logo */}
-      <div className={kaushan.className} style={{
-        fontSize: "28px",
-        margin: "24px 16px 32px",
-        textAlign: "center",
-      }}>
+    <aside
+      style={{
+        width: "260px",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        borderRight: "1px solid #EEEEEE",
+        background: "#FFFFFF",
+        flexShrink: 0,
+      }}
+    >
+      <div
+        className={kaushan.className}
+        style={{
+          fontSize: "40px",
+          margin: "24px 18px 36px",
+          textAlign: "center",
+          lineHeight: 1.1,
+          color: "#1F2933",
+        }}
+      >
         ProBar
       </div>
 
-      {/* Nav */}
-      <nav style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, padding: "0 16px" }}>
+      <nav style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, padding: "0 14px" }}>
         {items.map((item) => {
           const isActive = pathname === item.href
+
           return (
             <Link
               key={item.href}
@@ -78,25 +86,31 @@ export function Sidebar({ tipo }: { tipo: Role }) {
               style={{
                 display: "flex",
                 alignItems: "center",
+                height: "44px",
                 gap: "12px",
-                padding: "10px 14px",
-                borderRadius: "10px",
+                padding: "0 14px",
+                borderRadius: "8px",
                 textDecoration: "none",
-                border: "1px solid #A7A7A7",
-                backgroundColor: isActive ? "#F5C518" : "#fff",
-                color: "#000",
-                fontWeight: isActive ? "600" : "400",
+                border: isActive ? "1px solid #F1D46A" : "1px solid transparent",
+                borderLeft: isActive ? `4px solid ${PRIMARY_YELLOW}` : "4px solid transparent",
+                backgroundColor: isActive ? "#FFF8DB" : "#FFFFFF",
+                color: isActive ? "#1a1a1a" : "#5F6368",
+                fontWeight: isActive ? 700 : 500,
+                fontSize: "14px",
+                boxSizing: "border-box",
               }}
             >
-              <div style={{
-                width: "32px",
-                height: "32px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}>
-                <item.icon size={18} color="#000" />
+              <div
+                style={{
+                  width: "24px",
+                  height: "24px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <item.icon size={21} color={isActive ? "#1a1a1a" : "#6B7280"} />
               </div>
               <span>{item.label}</span>
             </Link>
@@ -104,33 +118,34 @@ export function Sidebar({ tipo }: { tipo: Role }) {
         })}
       </nav>
 
-      {/* Divisor + Botões de baixo */}
       <div>
-        <div style={{ borderTop: "1px solid #A7A7A7", marginBottom: "12px" }} />
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "0 16px 24px" }}>
+        <div style={{ borderTop: "1px solid #EEEEEE", marginBottom: "16px" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px", padding: "0 22px 24px" }}>
           <Link
             href={`/${prefix}/profile`}
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "12px",
+              gap: "16px",
               textDecoration: "none",
-              color: isPerfilActive ? "#000" : "#444",
-              fontWeight: isPerfilActive ? "600" : "400",
-              padding: "6px 4px",
+              color: isPerfilActive ? "#1a1a1a" : "#6D6D6D",
+              fontWeight: 600,
+              padding: 0,
             }}
           >
-            <div style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              border: "1px solid #A7A7A7",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}>
-              <User size={16} color="#444" />
+            <div
+              style={{
+                width: "25px",
+                height: "25px",
+                borderRadius: "50%",
+                border: "1px solid #E5E5E5",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <User size={15} color="#6D6D6D" />
             </div>
             <span style={{ fontSize: "14px" }}>Meu perfil</span>
           </Link>
@@ -140,31 +155,33 @@ export function Sidebar({ tipo }: { tipo: Role }) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "12px",
+              gap: "16px",
               background: "none",
               border: "none",
               cursor: "pointer",
-              color: "#444",
-              padding: "6px 4px",
+              color: "#6D6D6D",
+              padding: 0,
+              fontWeight: 600,
             }}
           >
-            <div style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              border: "1px solid #A7A7A7",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}>
-              <LogOut size={16} color="#444" />
+            <div
+              style={{
+                width: "25px",
+                height: "25px",
+                borderRadius: "50%",
+                border: "1px solid #E5E5E5",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <LogOut size={15} color="#6D6D6D" />
             </div>
             <span style={{ fontSize: "14px" }}>Sair</span>
           </button>
         </div>
       </div>
-
     </aside>
   )
 }
