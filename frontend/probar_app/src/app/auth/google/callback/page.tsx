@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { setToken } from "@/services/api"
 
 function isClientComplete(cliente: { data_nascimento?: string | null } | null) {
   return !!cliente?.data_nascimento
@@ -11,15 +12,19 @@ function isBartenderComplete(bartender: {
   data_nascimento?: string | null
   anos_experiencia?: number | null
   descricao_profissional?: string | null
+  valor_hora?: string | number | null
   cep?: string | null
   rua?: string | null
   bairro?: string | null
   numero?: string | null
 } | null) {
+  const valorHora = Number(String(bartender?.valor_hora ?? "").replace(",", "."))
+
   return !!(
     bartender?.data_nascimento &&
     bartender?.anos_experiencia &&
     bartender?.descricao_profissional &&
+    valorHora > 0 &&
     bartender?.cep &&
     bartender?.rua &&
     bartender?.bairro &&
@@ -32,7 +37,7 @@ function FullScreenLoading({ message = "Entrando..." }: { message?: string }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg text-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 rounded-full flex items-center justify-center bg-[#FFC105] animate-pulse">
+          <div className="h-12 w-12 rounded-full flex items-center justify-center bg-[#F5C518] animate-pulse">
             <svg className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -106,6 +111,8 @@ export default function GoogleCallbackPage() {
             return
           }
 
+          setToken(authData.access)
+
           // salva no servidor via rota interna
           await fetch("/api/auth/set-cookies", {
             method: "POST",
@@ -151,12 +158,12 @@ export default function GoogleCallbackPage() {
         // usuário não existe: redireciona para página full-screen de escolha de tipo
         try {
           sessionStorage.setItem("google_id_token", token)
-        } catch (e) {
+        } catch {
           // ignore
         }
         router.replace("/auth/google/choose-type")
-      } catch (e: any) {
-        setError(e?.message || "Erro ao processar callback do Google")
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Erro ao processar callback do Google")
       } finally {
         setProcessing(false)
       }

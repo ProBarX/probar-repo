@@ -5,6 +5,33 @@ import { useState, useEffect } from "react"
 import { Eye, EyeOff } from "lucide-react"
 import { useRouter } from "next/navigation"
 import RoleSelector from "@/components/RoleSelector"
+import { setToken } from "@/services/api"
+
+type BartenderProfileCompletion = {
+  data_nascimento?: string | null
+  anos_experiencia?: number | null
+  descricao_profissional?: string | null
+  valor_hora?: string | number | null
+  cep?: string | null
+  rua?: string | null
+  bairro?: string | null
+  numero?: string | null
+}
+
+function isBartenderProfileComplete(bartender: BartenderProfileCompletion) {
+  const valorHora = Number(String(bartender.valor_hora ?? "").replace(",", "."))
+
+  return Boolean(
+    bartender.data_nascimento &&
+      bartender.anos_experiencia &&
+      bartender.descricao_profissional &&
+      valorHora > 0 &&
+      bartender.cep &&
+      bartender.rua &&
+      bartender.bairro &&
+      bartender.numero
+  )
+}
 
 export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
@@ -35,6 +62,7 @@ export function LoginForm() {
       }
 
       const data = await res.json()
+      setToken(data.access)
 
       await fetch("/api/auth/set-cookies", {
         method: "POST",
@@ -77,7 +105,7 @@ export function LoginForm() {
         }
 
         const bartender = await bartenderRes.json()
-        const needsComplete = !bartender.data_nascimento || !bartender.anos_experiencia || !bartender.descricao_profissional || !bartender.cep || !bartender.rua || !bartender.bairro || !bartender.numero
+        const needsComplete = !isBartenderProfileComplete(bartender)
 
         if (needsComplete) {
           router.push("/bartender/complete")
@@ -96,16 +124,22 @@ export function LoginForm() {
   }
 
   const inputClass =
-    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] focus:border-transparent"
+    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F5C518] focus:border-transparent"
 
   const redirectByRole: Record<'cliente' | 'bartender', string> = {
     cliente: '/client/complete',
     bartender: '/bartender/complete',
   }
 
+  type GoogleLoginResponse = {
+    credential?: string
+    id_token?: string
+    code?: string
+  }
+
   // GoogleLogin/callback: processa id_token recebido e decide fluxo
-  function handleGoogleSuccess(res: any) {
-    const idToken = (res as any)?.credential || (res as any)?.id_token || (res as any)?.code
+  function handleGoogleSuccess(res: GoogleLoginResponse) {
+    const idToken = res.credential || res.id_token || res.code
     if (!idToken) {
       setGoogleError("Não foi possível obter credencial do Google.")
       return
@@ -139,6 +173,8 @@ export function LoginForm() {
             setGoogleError(authData.detail || "Erro ao autenticar")
             return
           }
+
+          setToken(authData.access)
 
           await fetch("/api/auth/set-cookies", {
             method: "POST",
@@ -179,7 +215,7 @@ export function LoginForm() {
               }
 
               const bartender = await bartenderRes.json()
-              const needsComplete = !bartender.data_nascimento || !bartender.anos_experiencia || !bartender.descricao_profissional || !bartender.cep || !bartender.rua || !bartender.bairro || !bartender.numero
+              const needsComplete = !isBartenderProfileComplete(bartender)
               if (needsComplete) {
                 router.push('/bartender/complete')
               } else {
@@ -188,7 +224,7 @@ export function LoginForm() {
               return
             }
             router.push('/')
-          } catch (e) {
+          } catch {
             router.push('/')
           }
           return
@@ -197,7 +233,7 @@ export function LoginForm() {
         // novo usuário -> pedir tipo
         setGoogleIdToken(idToken)
         setShowTipoModal(true)
-      } catch (e) {
+      } catch {
         setGoogleError("Erro ao comunicar com o servidor")
       }
     })()
@@ -240,6 +276,8 @@ export function LoginForm() {
                 return
               }
 
+              setToken(authData.access)
+
               await fetch("/api/auth/set-cookies", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -253,12 +291,12 @@ export function LoginForm() {
 
             setGoogleIdToken(token)
             setShowTipoModal(true)
-          } catch (e) {
+          } catch {
             setGoogleError("Erro ao comunicar com o servidor")
           }
         })()
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [])
@@ -304,6 +342,8 @@ export function LoginForm() {
         throw new Error(data.detail || "Erro ao autenticar no backend")
       }
 
+      setToken(data.access)
+
       // salva tokens via rota interna que já existe
       await fetch("/api/auth/set-cookies", {
         method: "POST",
@@ -314,8 +354,8 @@ export function LoginForm() {
       // redireciona conforme tipo retornado pelo backend (mapeamento centralizado)
       const dest = redirectByRole[data.tipo as 'cliente' | 'bartender'] || '/'
       router.push(dest)
-    } catch (err: any) {
-      setError(err.message || "Erro ao autenticar")
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erro ao autenticar")
     } finally {
       setLoading(false)
       setShowTipoModal(false)
@@ -379,7 +419,7 @@ export function LoginForm() {
           id="login-btn"
           onClick={handleLogin}
           disabled={loading}
-          className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"
+          className="w-full h-10 rounded-lg bg-[#F5C518] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"
         >
           {loading ? "Entrando..." : "Login"}
         </button>
@@ -454,7 +494,7 @@ export function LoginForm() {
 
               <button
                 onClick={handleConfirmTipo}
-                className="px-4 py-2 rounded bg-[#FFC105] font-semibold hover:shadow-md hover:-translate-y-0.5 transition disabled:opacity-60"
+                className="px-4 py-2 rounded bg-[#F5C518] font-semibold hover:shadow-md hover:-translate-y-0.5 transition disabled:opacity-60"
                 disabled={loading || !selectedTipo}
               >
                 {loading ? "Conectando..." : "Continuar"}

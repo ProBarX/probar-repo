@@ -14,7 +14,7 @@ export function BartenderLayoutWrapper({
   const isCompletePage = pathname === "/bartender/complete"
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", backgroundColor: isCompletePage ? "#FFFFFF" : "#F8FAFC" }}>
+    <div style={{ display: "flex", minHeight: "100vh", backgroundColor: isCompletePage ? "#f5f5f5" : "#F8FAFC" }}>
       {!isCompletePage && <Sidebar tipo={tipo} />}
       <main style={{ flex: 1, overflowY: "auto", padding: isCompletePage ? "0" : "24px 24px 32px" }}>
         {children}

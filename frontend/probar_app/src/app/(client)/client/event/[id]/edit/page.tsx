@@ -1,7 +1,7 @@
 "use client"
 
 import { use, useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { fetchEvento, updateEvento, apiToForm, type EventoForm } from "@/services/useEvent"
 import type { ApiError } from "@/types/user"
 
@@ -25,6 +25,7 @@ type Props = { params: Promise<{ id: string }> }
 
 export default function EditEventPage({ params }: Props) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { id } = use(params)
   const eventId = Number(id)
 
@@ -44,12 +45,20 @@ export default function EditEventPage({ params }: Props) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  function chooseEventPath() {
+    const queryParams = new URLSearchParams(searchParams.toString())
+    queryParams.set("evento", String(eventId))
+
+    const query = queryParams.toString()
+    return `/client/event/choose${query ? `?${query}` : ""}`
+  }
+
   async function handleSave() {
     setSaving(true)
     setError(null)
     try {
       await updateEvento(eventId, form)
-      router.push("/client/event/choose")
+      router.push(chooseEventPath())
     } catch (err) {
       const apiErr = err as ApiError
       const detail = apiErr?.response?.data
@@ -76,7 +85,7 @@ export default function EditEventPage({ params }: Props) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
         <button
-          onClick={() => router.push("/client/event/choose")}
+          onClick={() => router.push(chooseEventPath())}
           style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888" }}
         >
           ‹ <span style={{ fontSize: "18px", fontWeight: 500 }}>Voltar</span>

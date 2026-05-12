@@ -17,8 +17,12 @@ class Command(BaseCommand):
         stats = processar_pagamentos_pendentes(logger=logger)
 
         logger.info(
-            "Processamento concluido total=%s captured=%s skipped=%s errors=%s",
+            (
+                "Processamento concluido total=%s authorized=%s "
+                "captured=%s skipped=%s errors=%s"
+            ),
             stats["total"],
+            stats.get("authorized", 0),
             stats["captured"],
             stats["skipped"],
             stats["errors"],
@@ -28,6 +32,7 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 "Processamento concluido. "
                 f"total={stats['total']} "
+                f"authorized={stats.get('authorized', 0)} "
                 f"captured={stats['captured']} "
                 f"skipped={stats['skipped']} "
                 f"errors={stats['errors']}"

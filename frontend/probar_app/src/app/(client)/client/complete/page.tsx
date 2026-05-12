@@ -23,9 +23,12 @@ export default function CompletePage() {
         } else {
           setShowForm(true)
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         // 🔍 se der erro (401, etc), mostra form
-        console.error("Erro ao buscar usuário:", error.response?.data)
+        const response = error && typeof error === "object" && "response" in error
+          ? (error as { response?: { data?: unknown } }).response
+          : undefined
+        console.error("Erro ao buscar usuário:", response?.data)
         setShowForm(true)
       } finally {
         setLoading(false)

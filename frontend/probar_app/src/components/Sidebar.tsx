@@ -4,6 +4,7 @@ import { Home, MessageCircle, Star, Bell, User, LogOut, LucideIcon } from "lucid
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { kaushan } from "@/fonts"
+import { clearTokenCache } from "@/services/api"
 
 type Role = "cliente" | "bartender"
 
@@ -41,6 +42,7 @@ export function Sidebar({ tipo }: { tipo: Role }) {
   const prefix = routePrefix[tipo]
 
   async function handleLogout() {
+    clearTokenCache()
     await fetch("/api/auth/logout", { method: "POST" })
     router.push("/login")
   }

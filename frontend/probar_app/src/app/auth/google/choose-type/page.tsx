@@ -3,6 +3,33 @@
 import { useEffect, useState } from "react"
 import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
+import { setToken } from "@/services/api"
+
+type BartenderProfileCompletion = {
+  data_nascimento?: string | null
+  anos_experiencia?: number | null
+  descricao_profissional?: string | null
+  valor_hora?: string | number | null
+  cep?: string | null
+  rua?: string | null
+  bairro?: string | null
+  numero?: string | null
+}
+
+function isBartenderProfileComplete(bartender: BartenderProfileCompletion) {
+  const valorHora = Number(String(bartender.valor_hora ?? "").replace(",", "."))
+
+  return Boolean(
+    bartender.data_nascimento &&
+      bartender.anos_experiencia &&
+      bartender.descricao_profissional &&
+      valorHora > 0 &&
+      bartender.cep &&
+      bartender.rua &&
+      bartender.bairro &&
+      bartender.numero
+  )
+}
 
 export default function ChooseTypePage() {
   const router = useRouter()
@@ -21,7 +48,7 @@ export default function ChooseTypePage() {
         // Se não houver token, voltar para login (não deve acontecer)
         router.replace("/login")
       }
-    } catch (e) {
+    } catch {
       router.replace("/login")
     }
   }, [router])
@@ -47,13 +74,15 @@ export default function ChooseTypePage() {
         throw new Error(data.detail || "Erro ao autenticar")
       }
 
+      setToken(data.access)
+
       await fetch("/api/auth/set-cookies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: data.access, refresh: data.refresh, tipo: data.tipo }),
       })
 
-      try { sessionStorage.removeItem("google_id_token") } catch(e) {}
+      try { sessionStorage.removeItem("google_id_token") } catch {}
 
       // checar completude do perfil antes de redirecionar
       try {
@@ -88,7 +117,7 @@ export default function ChooseTypePage() {
           }
 
           const bartender = await bartenderRes.json()
-          const needsComplete = !bartender.data_nascimento || !bartender.anos_experiencia || !bartender.descricao_profissional || !bartender.cep || !bartender.rua || !bartender.bairro || !bartender.numero
+          const needsComplete = !isBartenderProfileComplete(bartender)
           if (needsComplete) {
             router.replace('/bartender/complete')
           } else {
@@ -98,11 +127,11 @@ export default function ChooseTypePage() {
         }
 
         router.replace('/')
-      } catch (e) {
+      } catch {
         router.replace('/')
       }
-    } catch (e: any) {
-      setError(e.message || "Erro ao criar conta")
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao criar conta")
     } finally {
       setLoading(false)
     }
@@ -122,7 +151,7 @@ export default function ChooseTypePage() {
 
         <div className="flex justify-end gap-2">
           <button onClick={() => router.replace("/login")} className="px-4 py-2 rounded border">Cancelar</button>
-          <button onClick={handleSubmit} disabled={loading || !selectedTipo} className="px-4 py-2 rounded bg-[#FFC105] font-semibold disabled:opacity-60">{loading ? "Conectando..." : "Continuar"}</button>
+          <button onClick={handleSubmit} disabled={loading || !selectedTipo} className="px-4 py-2 rounded bg-[#F5C518] font-semibold disabled:opacity-60">{loading ? "Conectando..." : "Continuar"}</button>
         </div>
       </div>
     </div>
