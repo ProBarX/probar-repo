@@ -175,6 +175,7 @@ export default function HomePage() {
               specialty={b.especialidades}
               price={b.valor_hora}
               rating={b.media_avaliacoes}
+              totalReviews={b.total_avaliacoes}
               image={b.foto_perfil ?? "/bartender-placeholder.jpg"}
               onSelect={() => router.push(`/client/bartender/${b.user_id}`)}
             />
