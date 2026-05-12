@@ -1,6 +1,7 @@
 import axios from "axios"
 
 let cachedToken: string | null = null
+let handlingUnauthorized = false
 
 export function setToken(token: string) {
     cachedToken = token
@@ -11,15 +12,13 @@ export function clearTokenCache() {
 }
 
 async function getToken(): Promise<string | null> {
-    if (cachedToken) return cachedToken
-
     try {
-        const res = await fetch("/api/auth/get-token")
+        const res = await fetch("/api/auth/get-token", { cache: "no-store" })
         const data = await res.json()
         cachedToken = data.token ?? null
         return cachedToken
     } catch {
-        return null
+        return cachedToken
     }
 }
 
@@ -54,6 +53,22 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
+        if (error.response?.status === 401) {
+            clearTokenCache()
+
+            if (typeof window !== "undefined" && !handlingUnauthorized) {
+                handlingUnauthorized = true
+                fetch("/api/auth/logout", { method: "POST" })
+                    .catch(() => null)
+                    .finally(() => {
+                        if (window.location.pathname !== "/login") {
+                            window.location.assign("/login")
+                        }
+                        handlingUnauthorized = false
+                    })
+            }
+        }
+
         console.error("Erro da API:", error.response?.data)
         return Promise.reject(error)
     }

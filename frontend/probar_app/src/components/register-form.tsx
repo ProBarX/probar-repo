@@ -6,7 +6,48 @@ import { Eye, EyeOff } from "lucide-react"
 import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
 import { createUser } from "@/services/user"
-import { apiAuth } from "@/services/api"
+import { apiAuth, setToken } from "@/services/api"
+
+type ApiErrorResponse = {
+  response?: {
+    data?: Record<string, unknown>
+  }
+}
+
+function getFirstMessage(value: unknown) {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : null
+  }
+
+  return typeof value === "string" ? value : null
+}
+
+function getRegisterErrorMessage(error: unknown) {
+  const data =
+    error && typeof error === "object" && "response" in error
+      ? (error as ApiErrorResponse).response?.data
+      : undefined
+
+  const emailMessage = getFirstMessage(data?.email)
+  if (emailMessage) {
+    if (emailMessage.toLowerCase().includes("already exists") || emailMessage.toLowerCase().includes("já existe")) {
+      return "Este e-mail já está cadastrado. Faça login para continuar."
+    }
+
+    return emailMessage
+  }
+
+  const passwordMessage = getFirstMessage(data?.password)
+  if (passwordMessage) return passwordMessage
+
+  const detailMessage = getFirstMessage(data?.detail)
+  if (detailMessage) return detailMessage
+
+  const nonFieldMessage = getFirstMessage(data?.non_field_errors)
+  if (nonFieldMessage) return nonFieldMessage
+
+  return "Erro ao cadastrar. Confira os dados e tente novamente."
+}
 
 export function RegisterForm() {
   const router = useRouter()
@@ -19,25 +60,41 @@ export function RegisterForm() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [agreed, setAgreed] = useState(false)
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
   async function handleRegister() {
+    if (loading) return
+    setError("")
+
     try {
       if (!tipo) {
-        alert("Selecione o tipo de conta")
+        setError("Selecione o tipo de conta.")
         return
       }
       if (!agreed) {
-        alert("Aceite os termos para continuar")
+        setError("Aceite os termos para continuar.")
+        return
+      }
+      if (!name.trim()) {
+        setError("Informe seu nome.")
+        return
+      }
+      if (!email.trim()) {
+        setError("Informe seu e-mail.")
         return
       }
       if (password !== confirmPassword) {
-        alert("As senhas não coincidem")
+        setError("As senhas não coincidem.")
         return
       }
 
-      await createUser({ name, email, password, tipo })
+      setLoading(true)
 
-      const { data: authData } = await apiAuth.post("/api/token/", { email, password })
+      await createUser({ name: name.trim(), email: email.trim(), password, tipo })
+
+      const { data: authData } = await apiAuth.post("/api/token/", { email: email.trim(), password })
+      setToken(authData.access)
 
       await fetch("/api/auth/set-cookies", {
         method: "POST",
@@ -68,13 +125,14 @@ export function RegisterForm() {
 
       router.push("/login")
     } catch (error) {
-      console.error(error)
-      alert("Erro ao cadastrar")
+      setError(getRegisterErrorMessage(error))
+    } finally {
+      setLoading(false)
     }
   }
 
   const inputClass =
-    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFC105] focus:border-transparent"
+    "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F5C518] focus:border-transparent"
 
   return (
     <div className="w-full space-y-5">
@@ -183,7 +241,7 @@ export function RegisterForm() {
             id="terms"
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
-            className="mt-0.5 accent-[#FFC105]"
+            className="mt-0.5 accent-[#F5C518]"
           />
           <label htmlFor="terms">
             Li e concordo com os{" "}
@@ -193,11 +251,16 @@ export function RegisterForm() {
           </label>
         </div>
 
+        {error && (
+          <p className="text-sm text-red-500 text-center">{error}</p>
+        )}
+
         <button
           type="submit"
-          className="w-full h-10 rounded-lg bg-[#FFC105] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors"
+          disabled={loading}
+          className="w-full h-10 rounded-lg bg-[#F5C518] hover:bg-yellow-400 text-black text-sm font-semibold transition-colors disabled:opacity-60"
         >
-          Cadastrar
+          {loading ? "Cadastrando..." : "Cadastrar"}
         </button>
       </form>
 

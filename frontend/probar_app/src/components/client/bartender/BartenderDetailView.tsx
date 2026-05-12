@@ -5,6 +5,7 @@ import type { CSSProperties } from "react"
 import { useRouter } from "next/navigation"
 
 export type BartenderDetail = {
+  user_id: number
   email: string
   nome: string
   especialidades: string
@@ -17,6 +18,8 @@ export type BartenderDetail = {
     nome: string
     foto: string | null
   }[]
+  media_avaliacoes: number
+  total_avaliacoes: number
 }
 
 type Props = {
@@ -36,9 +39,10 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
   const router = useRouter()
 
   function handleNegociar() {
-    // Passa o email do bartender e as horas escolhidas para a tela de seleção de evento
+    // Passa o id do bartender e as horas escolhidas para a tela de selecao de evento.
     const params = new URLSearchParams({
-      bartender: bartender.email,
+      bartender: String(bartender.user_id),
+      bartenderName: bartender.nome,
       horas: String(hours),
     })
     router.push(`/client/event/choose?${params.toString()}`)
@@ -91,7 +95,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
               borderRadius: "20px", padding: "3px 10px",
               fontSize: "12px", fontWeight: "600",
             }}>
-              ⭐ {bartender.anos_experiencia > 0 ? bartender.anos_experiencia : "—"}
+              ⭐ {bartender.media_avaliacoes > 0 ? bartender.media_avaliacoes.toFixed(1).replace(".", ",") : "—"}
             </span>
           </div>
 
@@ -155,7 +159,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
                 borderRadius: "20px", padding: "4px 12px",
                 fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap",
               }}>
-                ⭐ 4,5
+                ⭐ {bartender.media_avaliacoes > 0 ? bartender.media_avaliacoes.toFixed(1).replace(".", ",") : "—"}
               </span>
             </div>
           </div>
