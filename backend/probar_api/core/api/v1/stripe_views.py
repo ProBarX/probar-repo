@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
+from core.enums import PagamentoStatus
 from core.models import Pedido, Pagamento
 from core.services import stripe_service
 
@@ -20,13 +21,22 @@ def _stripe_attr(obj, key, default=None):
 
 
 def _pagamento_payload(pagamento, intent):
+    mode = "setup" if (
+        pagamento.stripe_setup_intent_id
+        and not pagamento.stripe_payment_intent_id
+    ) else "payment"
+
     return {
         "pagamento_id": pagamento.id,
         "pedido_id": pagamento.pedido_id,
         "valor": str(pagamento.valor),
         "status": pagamento.status,
+        "mode": mode,
         "finalizado_pelo_cliente": pagamento.finalizado_pelo_cliente,
-        "payment_intent_id": _stripe_attr(intent, "id"),
+        "payment_intent_id": pagamento.stripe_payment_intent_id,
+        "setup_intent_id": pagamento.stripe_setup_intent_id,
+        "stripe_resource_id": _stripe_attr(intent, "id"),
+        "payment_method_id": pagamento.stripe_payment_method_id,
         "client_secret": _stripe_attr(intent, "client_secret"),
         "stripe_status": _stripe_attr(intent, "status"),
     }
@@ -173,6 +183,45 @@ def pagar_pedido(request, pedido_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def confirmar_setup_pagamento(request, pagamento_id):
+    try:
+        pagamento = Pagamento.objects.select_related(
+            "pedido__cliente"
+        ).get(id=pagamento_id)
+
+        if not hasattr(request.user, "cliente"):
+            return Response(
+                {"erro": "Apenas clientes podem confirmar pagamento futuro"},
+                status=403,
+            )
+
+        if pagamento.pedido.cliente.user_id != request.user.id:
+            return Response(
+                {"erro": "VocÃª nÃ£o pode confirmar este pagamento"},
+                status=403,
+            )
+
+        if not pagamento.stripe_setup_intent_id:
+            return Response(
+                {"erro": "Pagamento nao usa confirmacao futura"},
+                status=400,
+            )
+
+        pagamento, setup_intent = stripe_service.sincronizar_setup_pagamento(
+            pagamento
+        )
+
+        return Response(_pagamento_payload(pagamento, setup_intent))
+
+    except Pagamento.DoesNotExist:
+        return Response({"erro": "Pagamento nÃ£o encontrado"}, status=404)
+
+    except ValueError as e:
+        return Response({"erro": str(e)}, status=400)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def capturar_pagamento(request, pagamento_id):
     try:
         pagamento = Pagamento.objects.select_related(
@@ -223,15 +272,38 @@ def finalizar_pagamento(request, pagamento_id):
             )
 
         if pagamento.finalizado_pelo_cliente:
+            if pagamento.stripe_payment_intent_id and pagamento.status != PagamentoStatus.PAGO:
+                stripe_service.capturar_pagamento_seguro(pagamento)
+                pagamento.refresh_from_db()
+                if pagamento.status != PagamentoStatus.PAGO:
+                    return Response(
+                        {"erro": "Pagamento nao foi capturado"},
+                        status=400,
+                    )
             return Response({"status": "Pagamento já finalizado"})
 
-        pagamento.finalizado_pelo_cliente = True
-        pagamento.save(update_fields=["finalizado_pelo_cliente"])
+        if pagamento.stripe_payment_intent_id:
+            pagamento.finalizado_pelo_cliente = True
+            stripe_service.capturar_pagamento_seguro(pagamento)
+            pagamento.refresh_from_db()
+
+            if pagamento.status != PagamentoStatus.PAGO:
+                return Response(
+                    {"erro": "Pagamento nao foi capturado"},
+                    status=400,
+                )
+
+        if not pagamento.finalizado_pelo_cliente:
+            pagamento.finalizado_pelo_cliente = True
+            pagamento.save(update_fields=["finalizado_pelo_cliente"])
 
         return Response({"status": "Pagamento finalizado pelo cliente"})
 
     except Pagamento.DoesNotExist:
         return Response({"erro": "Pagamento não encontrado"}, status=404)
+
+    except ValueError as e:
+        return Response({"erro": str(e)}, status=400)
 
 
 # =========================

@@ -89,17 +89,68 @@ def validar_pagamento(pedido, user):
 
     if not pedido.bartender.stripe_onboarding_completo:
         raise ValueError("Onboarding do bartender incompleto")
-    
+
+
+def _manual_capture_window():
+    return timedelta(
+        days=int(getattr(settings, "STRIPE_MANUAL_CAPTURE_WINDOW_DAYS", 5))
+    )
+
+
+def _aware(dt):
+    if timezone.is_aware(dt):
+        return dt
+    return timezone.make_aware(dt)
+
+
+def periodo_evento(evento):
+    inicio = datetime.combine(evento.data, evento.hora_inicio)
+    fim = datetime.combine(evento.data, evento.hora_fim)
+
+    if fim <= inicio:
+        fim = fim + timedelta(days=1)
+
+    return _aware(inicio), _aware(fim)
+
+
+def evento_esta_na_janela_autorizacao(evento):
+    inicio_evento, fim_evento = periodo_evento(evento)
+    agora = timezone.now()
+
+    return (
+        agora >= inicio_evento - _manual_capture_window()
+        and agora <= fim_evento + timedelta(hours=2)
+    )
+
+
+def garantir_stripe_customer(cliente):
+    if cliente.stripe_customer_id:
+        return cliente.stripe_customer_id
+
+    customer = stripe.Customer.create(
+        email=cliente.user.email,
+        name=cliente.user.name or None,
+        metadata={"cliente_user_id": str(cliente.user_id)},
+    )
+
+    cliente.stripe_customer_id = customer.id
+    cliente.save(update_fields=["stripe_customer_id"])
+
+    return customer.id
 
 def reativar_pagamento(pagamento, intent):
     pagamento.status = PagamentoStatus.PENDENTE
     pagamento.stripe_payment_intent_id = intent.id
+    pagamento.stripe_setup_intent_id = None
+    pagamento.stripe_payment_method_id = None
     pagamento.stripe_payment_method_type = None
     pagamento.finalizado_pelo_cliente = False
     pagamento.save(
         update_fields=[
             "status",
             "stripe_payment_intent_id",
+            "stripe_setup_intent_id",
+            "stripe_payment_method_id",
             "stripe_payment_method_type",
             "finalizado_pelo_cliente",
         ]
@@ -107,15 +158,35 @@ def reativar_pagamento(pagamento, intent):
     return pagamento, intent
 
 
+def ativar_setup_pagamento(pagamento, setup_intent):
+    pagamento.status = PagamentoStatus.PENDENTE
+    pagamento.stripe_payment_intent_id = None
+    pagamento.stripe_setup_intent_id = setup_intent.id
+    pagamento.stripe_payment_method_id = None
+    pagamento.stripe_payment_method_type = None
+    pagamento.finalizado_pelo_cliente = False
+    pagamento.save(
+        update_fields=[
+            "status",
+            "stripe_payment_intent_id",
+            "stripe_setup_intent_id",
+            "stripe_payment_method_id",
+            "stripe_payment_method_type",
+            "finalizado_pelo_cliente",
+        ]
+    )
+    return pagamento, setup_intent
+
+
 def criar_pagamento_seguro(pedido_id, user):
-    from core.models import Pedido, Pagamento
+    from core.models import Pedido
 
     with transaction.atomic():
         # trava a linha no banco
         pedido = (
             Pedido.objects
             .select_for_update()
-            .select_related("cliente", "bartender")
+            .select_related("cliente__user", "bartender", "evento")
             .get(id=pedido_id)
         )
 
@@ -130,59 +201,252 @@ def criar_pagamento_seguro(pedido_id, user):
                 raise ValueError("Pedido ja foi pago")
 
             if pagamento_existente.status == PagamentoStatus.CANCELADO:
-                intent = criar_pagamento_intent(
+                return criar_sessao_pagamento_para_pedido(
                     pedido,
-                    idempotency_key=f"pedido_{pedido.id}_retry_{pagamento_existente.id}",
+                    pagamento=pagamento_existente,
+                    idempotency_suffix=f"retry_{pagamento_existente.id}",
                 )
-                return reativar_pagamento(pagamento_existente, intent)
 
             if not pagamento_existente.stripe_payment_intent_id:
-                intent = criar_pagamento_intent(
+                if pagamento_existente.stripe_setup_intent_id:
+                    setup_intent = stripe.SetupIntent.retrieve(
+                        pagamento_existente.stripe_setup_intent_id
+                    )
+                    setup_status = _stripe_attr(setup_intent, "status")
+                    sincronizar_setup_pagamento(pagamento_existente, setup_intent)
+
+                    if (
+                        pagamento_existente.status == PagamentoStatus.CANCELADO
+                        or setup_status == "canceled"
+                    ):
+                        return criar_sessao_pagamento_para_pedido(
+                            pedido,
+                            pagamento=pagamento_existente,
+                            idempotency_suffix=f"retry_{pagamento_existente.id}",
+                        )
+
+                    if (
+                        evento_esta_na_janela_autorizacao(pedido.evento)
+                        and pagamento_existente.stripe_payment_method_id
+                    ):
+                        intent = criar_intent_com_payment_method_salvo(
+                            pagamento_existente,
+                            idempotency_key=(
+                                f"pedido_{pedido.id}_scheduled_"
+                                f"{pagamento_existente.id}"
+                            ),
+                        )
+                        return pagamento_existente, intent
+
+                    return pagamento_existente, setup_intent
+
+                return criar_sessao_pagamento_para_pedido(
                     pedido,
-                    idempotency_key=f"pedido_{pedido.id}_repair_{pagamento_existente.id}",
+                    pagamento=pagamento_existente,
+                    idempotency_suffix=f"repair_{pagamento_existente.id}",
                 )
-                return reativar_pagamento(pagamento_existente, intent)
 
             intent = stripe.PaymentIntent.retrieve(
                 pagamento_existente.stripe_payment_intent_id
             )
 
             if intent.status == "canceled":
-                intent = criar_pagamento_intent(
+                return criar_sessao_pagamento_para_pedido(
                     pedido,
-                    idempotency_key=f"pedido_{pedido.id}_retry_{pagamento_existente.id}",
+                    pagamento=pagamento_existente,
+                    idempotency_suffix=f"retry_{pagamento_existente.id}",
                 )
-                return reativar_pagamento(pagamento_existente, intent)
 
             return pagamento_existente, intent
 
-        intent = criar_pagamento_intent(pedido)
+        return criar_sessao_pagamento_para_pedido(pedido)
+
+
+def criar_sessao_pagamento_para_pedido(pedido, *, pagamento=None, idempotency_suffix=None):
+    from core.models import Pagamento
+
+    idempotency_key = (
+        f"pedido_{pedido.id}_{idempotency_suffix}"
+        if idempotency_suffix
+        else None
+    )
+
+    if evento_esta_na_janela_autorizacao(pedido.evento):
+        intent = criar_pagamento_intent(
+            pedido,
+            idempotency_key=idempotency_key,
+        )
+
+        if pagamento:
+            return reativar_pagamento(pagamento, intent)
 
         pagamento = Pagamento.objects.create(
             pedido=pedido,
             valor=pedido.valor_total_aprovado,
             metodo_pagamento=PagamentoMetodo.STRIPE,
-            stripe_payment_intent_id=intent.id
+            stripe_payment_intent_id=intent.id,
         )
 
         return pagamento, intent
 
+    customer_id = garantir_stripe_customer(pedido.cliente)
+    setup_intent = criar_setup_intent(
+        pedido,
+        customer_id=customer_id,
+        idempotency_key=(
+            f"pedido_{pedido.id}_setup_{idempotency_suffix}"
+            if idempotency_suffix
+            else None
+        ),
+    )
 
-def criar_pagamento_intent(pedido, *, idempotency_key=None):
+    if pagamento:
+        return ativar_setup_pagamento(pagamento, setup_intent)
+
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_setup_intent_id=setup_intent.id,
+    )
+
+    return pagamento, setup_intent
+
+
+def criar_pagamento_intent(
+    pedido,
+    *,
+    idempotency_key=None,
+    customer_id=None,
+    payment_method_id=None,
+    confirm=False,
+    off_session=False,
+):
     amount = _to_cents(pedido.valor_total_aprovado)
     fee_amount = _calcular_taxa_plataforma(amount)
 
-    return stripe.PaymentIntent.create(
-        amount=amount,
-        currency="brl",
-        capture_method="manual",
-        payment_method_types=["card"],
-        transfer_data={
+    params = {
+        "amount": amount,
+        "currency": "brl",
+        "capture_method": "manual",
+        "payment_method_types": ["card"],
+        "transfer_data": {
             "destination": pedido.bartender.stripe_account_id
         },
-        application_fee_amount=fee_amount,
-        idempotency_key=idempotency_key or f"pedido_{pedido.id}"
+        "application_fee_amount": fee_amount,
+    }
+
+    if customer_id:
+        params["customer"] = customer_id
+
+    if payment_method_id:
+        params["payment_method"] = payment_method_id
+
+    if confirm:
+        params["confirm"] = True
+        params["off_session"] = off_session
+
+    return stripe.PaymentIntent.create(
+        **params,
+        idempotency_key=idempotency_key or f"pedido_{pedido.id}",
     )
+
+
+def criar_setup_intent(pedido, *, customer_id, idempotency_key=None):
+    return stripe.SetupIntent.create(
+        customer=customer_id,
+        payment_method_types=["card"],
+        usage="off_session",
+        metadata={"pedido_id": str(pedido.id)},
+        idempotency_key=idempotency_key or f"pedido_{pedido.id}_setup",
+    )
+
+
+def _stripe_object_id(value):
+    if not value:
+        return None
+
+    if isinstance(value, str):
+        return value
+
+    return _stripe_attr(value, "id")
+
+
+def _extrair_payment_method_id(setup_intent):
+    if hasattr(setup_intent, "get"):
+        value = setup_intent.get("payment_method")
+    else:
+        value = getattr(setup_intent, "payment_method", None)
+
+    return _stripe_object_id(value)
+
+
+def sincronizar_setup_pagamento(pagamento, setup_intent=None):
+    if not setup_intent:
+        if not pagamento.stripe_setup_intent_id:
+            raise ValueError("Pagamento sem SetupIntent")
+
+        setup_intent = stripe.SetupIntent.retrieve(
+            pagamento.stripe_setup_intent_id
+        )
+
+    status = _stripe_attr(setup_intent, "status")
+
+    if status == "succeeded":
+        update_fields = []
+        payment_method_id = _extrair_payment_method_id(setup_intent)
+        metodo_stripe = _extrair_metodo_pagamento_stripe(setup_intent)
+
+        if payment_method_id and pagamento.stripe_payment_method_id != payment_method_id:
+            pagamento.stripe_payment_method_id = payment_method_id
+            update_fields.append("stripe_payment_method_id")
+
+        if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
+            pagamento.stripe_payment_method_type = metodo_stripe
+            update_fields.append("stripe_payment_method_type")
+
+        if update_fields:
+            pagamento.save(update_fields=update_fields)
+
+    elif status == "canceled":
+        marcar_pagamento_cancelado(pagamento)
+
+    return pagamento, setup_intent
+
+
+def criar_intent_com_payment_method_salvo(pagamento, *, idempotency_key=None):
+    pagamento, _ = sincronizar_setup_pagamento(pagamento)
+
+    if not pagamento.stripe_payment_method_id:
+        raise ValueError("Cartao ainda nao salvo para cobranca futura")
+
+    pedido = pagamento.pedido
+    customer_id = (
+        pagamento.pedido.cliente.stripe_customer_id
+        or garantir_stripe_customer(pagamento.pedido.cliente)
+    )
+
+    intent = criar_pagamento_intent(
+        pedido,
+        customer_id=customer_id,
+        payment_method_id=pagamento.stripe_payment_method_id,
+        confirm=True,
+        off_session=True,
+        idempotency_key=idempotency_key
+        or f"pedido_{pedido.id}_scheduled_{pagamento.id}",
+    )
+
+    update_fields = ["stripe_payment_intent_id"]
+    pagamento.stripe_payment_intent_id = intent.id
+
+    metodo_stripe = _extrair_metodo_pagamento_stripe(intent)
+    if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
+        pagamento.stripe_payment_method_type = metodo_stripe
+        update_fields.append("stripe_payment_method_type")
+
+    pagamento.save(update_fields=update_fields)
+
+    return intent
 
 
 def _to_cents(valor):
@@ -239,9 +503,7 @@ def pode_capturar(pagamento):
     pedido = pagamento.pedido
     evento = pedido.evento
 
-    fim_evento = timezone.make_aware(
-        datetime.combine(evento.data, evento.hora_fim)
-    )
+    _, fim_evento = periodo_evento(evento)
 
     agora = timezone.now()
 
@@ -325,12 +587,101 @@ def capturar_pagamento_seguro(pagamento):
 # PROCESSAMENTO AUTOMÁTICO
 # =========================
 
-def processar_pagamentos_pendentes(logger=None):
-    pagamentos = Pagamento.objects.filter(status=PagamentoStatus.PENDENTE)
+def processar_pagamentos_agendados(logger=None):
+    pagamentos = (
+        Pagamento.objects
+        .filter(
+            status=PagamentoStatus.PENDENTE,
+            stripe_payment_intent_id__isnull=True,
+            stripe_setup_intent_id__isnull=False,
+        )
+        .select_related(
+            "pedido__evento",
+            "pedido__cliente__user",
+            "pedido__bartender",
+        )
+    )
     total = 0
-    captured = 0
+    authorized = 0
     skipped = 0
     errors = 0
+
+    for pagamento in pagamentos:
+        total += 1
+        try:
+            if not evento_esta_na_janela_autorizacao(pagamento.pedido.evento):
+                skipped += 1
+                continue
+
+            setup_intent = stripe.SetupIntent.retrieve(
+                pagamento.stripe_setup_intent_id
+            )
+            sincronizar_setup_pagamento(pagamento, setup_intent)
+
+            if pagamento.status == PagamentoStatus.CANCELADO:
+                skipped += 1
+                continue
+
+            setup_status = _stripe_attr(setup_intent, "status")
+            if setup_status != "succeeded":
+                skipped += 1
+                if logger:
+                    logger.info(
+                        "Pagamento id=%s aguardando cartao salvo status=%s",
+                        pagamento.id,
+                        setup_status,
+                    )
+                continue
+
+            intent = criar_intent_com_payment_method_salvo(pagamento)
+
+            if intent.status == "requires_capture":
+                authorized += 1
+            elif intent.status == "succeeded":
+                marcar_pagamento_pago(pagamento)
+                marcar_pedido_pago(pagamento)
+                authorized += 1
+            elif intent.status == "canceled":
+                marcar_pagamento_cancelado(pagamento)
+                skipped += 1
+            else:
+                skipped += 1
+                if logger:
+                    logger.info(
+                        "Pagamento id=%s sem autorizacao status=%s",
+                        pagamento.id,
+                        intent.status,
+                    )
+        except Exception:
+            errors += 1
+            if logger:
+                logger.exception(
+                    "Erro ao autorizar pagamento agendado id=%s",
+                    pagamento.id,
+                )
+
+    return {
+        "total": total,
+        "authorized": authorized,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
+def processar_pagamentos_pendentes(logger=None):
+    scheduled_stats = processar_pagamentos_agendados(logger=logger)
+
+    pagamentos = (
+        Pagamento.objects
+        .filter(status=PagamentoStatus.PENDENTE)
+        .exclude(stripe_payment_intent_id__isnull=True)
+        .select_related("pedido__evento", "pedido__cliente", "pedido__bartender")
+    )
+
+    total = scheduled_stats["total"]
+    captured = 0
+    skipped = scheduled_stats["skipped"]
+    errors = scheduled_stats["errors"]
 
     for pagamento in pagamentos:
         total += 1
@@ -338,9 +689,6 @@ def processar_pagamentos_pendentes(logger=None):
             if not pode_capturar(pagamento):
                 skipped += 1
                 continue
-
-            if not pagamento.stripe_payment_intent_id:
-                raise ValueError("Pagamento sem PaymentIntent")
 
             intent = stripe.PaymentIntent.retrieve(
                 pagamento.stripe_payment_intent_id
@@ -379,6 +727,7 @@ def processar_pagamentos_pendentes(logger=None):
 
     return {
         "total": total,
+        "authorized": scheduled_stats["authorized"],
         "captured": captured,
         "skipped": skipped,
         "errors": errors,
@@ -414,7 +763,21 @@ def processar_webhook(event):
         pedido.status = PedidoStatus.PAGO
         pedido.save(update_fields=["status"])
 
-    elif tipo == "payment_intent.payment_failed":
+    elif tipo in ["payment_intent.payment_failed", "payment_intent.canceled"]:
         Pagamento.objects.filter(
             stripe_payment_intent_id=data["id"]
+        ).update(status=PagamentoStatus.CANCELADO)
+
+    elif tipo == "setup_intent.succeeded":
+        pagamento = Pagamento.objects.filter(
+            stripe_setup_intent_id=data["id"]
+        ).first()
+
+        if pagamento:
+            sincronizar_setup_pagamento(pagamento, data)
+
+    elif tipo == "setup_intent.canceled":
+        Pagamento.objects.filter(
+            stripe_setup_intent_id=data["id"],
+            stripe_payment_intent_id__isnull=True,
         ).update(status=PagamentoStatus.CANCELADO)

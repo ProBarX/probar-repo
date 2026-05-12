@@ -100,6 +100,8 @@ class Cliente(BaseModel):
         blank=True
     )
 
+    stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
+
     def __str__(self):
         return f"Cliente: {self.user.email}"
     
@@ -624,6 +626,8 @@ class Pagamento(BaseModel):
     status = models.CharField(max_length=20, choices=PagamentoStatus.choices, default=PagamentoStatus.PENDENTE)
 
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_setup_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_payment_method_id = models.CharField(max_length=255, blank=True, null=True)
     stripe_payment_method_type = models.CharField(max_length=50, blank=True, null=True)
     finalizado_pelo_cliente = models.BooleanField(default=False)
 
