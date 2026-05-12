@@ -155,8 +155,14 @@ Validações:
 * Bartender com conta Stripe vinculada
 * Onboarding Stripe do bartender completo
 
-O backend cria um `PaymentIntent` com captura manual e grava um `Pagamento`
-local como `PENDENTE`.
+Se o evento estiver dentro da janela `STRIPE_MANUAL_CAPTURE_WINDOW_DAYS`, o
+backend cria um `PaymentIntent` com captura manual e grava um `Pagamento` local
+como `PENDENTE`.
+
+Se o evento ainda estiver distante, o backend cria um `SetupIntent` para salvar
+o cartao do cliente (`usage=off_session`) e grava o `Pagamento` local como
+`PENDENTE`, sem autorizar o valor naquele momento. O job periodico cria o
+`PaymentIntent` com captura manual quando o evento entra na janela segura.
 
 ---
 
@@ -232,6 +238,9 @@ O sistema implementa:
 
 ---
 
+Observacao: `STRIPE_MANUAL_CAPTURE_WINDOW_DAYS` controla a janela em que o
+backend pode autorizar o cartao com captura manual. O padrao no codigo e 5 dias.
+
 ## Endpoints
 
 | Método | Rota                  | Descrição              |
@@ -239,12 +248,16 @@ O sistema implementa:
 | POST   | /stripe/onboarding    | Gerar link onboarding  |
 | GET    | /stripe/status        | Verificar onboarding   |
 | POST   | /stripe/pagar/{id}    | Criar pagamento        |
+| POST   | /stripe/setup-confirmado/{id} | Sincronizar cartao salvo |
 | POST   | /stripe/capturar/{id} | Capturar pagamento     |
 | POST   | /stripe/webhook       | Receber eventos Stripe |
 
 ---
 
 ## Observações Importantes
+
+* Eventos distantes salvam o cartao via `SetupIntent`; a autorizacao do valor
+  acontece apenas quando o evento entra em `STRIPE_MANUAL_CAPTURE_WINDOW_DAYS`
 
 * O pagamento utiliza **captura manual (retenção)**
 * O backend controla quando o dinheiro é liberado
@@ -261,26 +274,20 @@ O backend executa periodicamente o job `processar_pagamentos_pendentes` para
 verificar pagamentos `PENDENTE` e liberar apenas os que já passaram da regra
 de 2h após o fim do evento.
 
-O job roda via management command:
+O job roda via management command e deve ser agendado pela plataforma de deploy
+(por exemplo, Render Cron Job):
 
 ```
-python manage.py processar_pagamentos_pendentes
+cd backend/probar_api && python manage.py processar_pagamentos_pendentes
+```
+
+Agendamento sugerido:
+
+```
+*/5 * * * *
 ```
 
 Os logs ficam em `backend/probar_api/logs/pagamentos_cron.log`.
-
-Exemplo de agendamento no Linux (crontab a cada 5 minutos):
-
-```
-*/5 * * * * /caminho/para/venv/bin/python /caminho/para/manage.py processar_pagamentos_pendentes
-```
-
-No Windows, use o Agendador de Tarefas:
-
-```
-Programa: C:\caminho\para\venv\Scripts\python.exe
-Argumentos: C:\caminho\para\manage.py processar_pagamentos_pendentes
-```
 
 ---
 

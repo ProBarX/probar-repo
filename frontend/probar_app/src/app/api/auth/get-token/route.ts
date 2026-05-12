@@ -1,6 +1,8 @@
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
+const ACCESS_TOKEN_MAX_AGE = 60 * 10
+
 function tokenExpiresSoon(token?: string) {
   if (!token) return true
 
@@ -56,7 +58,9 @@ export async function GET() {
   cookieStore.set("token", newToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     path: "/",
+    maxAge: ACCESS_TOKEN_MAX_AGE,
   })
 
   return NextResponse.json({ token: newToken })

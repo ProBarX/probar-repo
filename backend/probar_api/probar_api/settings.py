@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import timedelta
 import os
 import environ
 import dj_database_url
@@ -20,6 +21,7 @@ STRIPE_RETURN_URL = env('STRIPE_RETURN_URL')
 STRIPE_REFRESH_URL = env('STRIPE_REFRESH_URL')
 STRIPE_PLATFORM_FEE_PERCENT = env('STRIPE_PLATFORM_FEE_PERCENT')
 STRIPE_WEBHOOK_SECRET = env('STRIPE_WEBHOOK_SECRET', default='')
+STRIPE_MANUAL_CAPTURE_WINDOW_DAYS = env.int('STRIPE_MANUAL_CAPTURE_WINDOW_DAYS', default=5)
 
 
 DEBUG = env('DEBUG')
@@ -45,7 +47,6 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'drf_spectacular_sidecar',
     'corsheaders',
-    'django_crontab',
 ] + LOCAL_APPS
 
 
@@ -70,6 +71,8 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=10),
+    "REFRESH_TOKEN_LIFETIME": timedelta(hours=24),
 }
 
 # Client ID usado para validação dos id_tokens do Google (opcional, mas recomendado)
