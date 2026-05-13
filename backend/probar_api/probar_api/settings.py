@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import timedelta
 import os
+import sys
 import environ
 import dj_database_url
 
@@ -187,5 +188,6 @@ STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+SERVE_MEDIA_FILES = env.bool("SERVE_MEDIA_FILES", default=DEBUG or "runserver" in sys.argv)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

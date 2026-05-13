@@ -167,7 +167,7 @@ export default function HomePage() {
       )}
 
       {!loading && !error && filtered.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: "16px" }}>
           {filtered.map((b, index) => (
             <BartenderCard
               key={b.user_id ?? b.email + index}
@@ -176,7 +176,9 @@ export default function HomePage() {
               price={b.valor_hora}
               rating={b.media_avaliacoes}
               totalReviews={b.total_avaliacoes}
-              image={b.foto_perfil ?? "/bartender-placeholder.jpg"}
+              image={b.foto_perfil ?? "/bartender-placeholder.svg"}
+              experience={b.anos_experiencia}
+              description={b.descricao_profissional}
               onSelect={() => router.push(`/client/bartender/${b.user_id}`)}
             />
           ))}

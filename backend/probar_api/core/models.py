@@ -21,6 +21,12 @@ from core.enums import (
 )
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
+from core.services.image_processing import (
+    DRINK_IMAGE_SIZE,
+    PROFILE_IMAGE_SIZE,
+    normalize_uncommitted_image_field,
+    should_process_image_field,
+)
 
 
 # Base para Soft Delete e controle de datas
@@ -102,6 +108,17 @@ class Cliente(BaseModel):
 
     stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
 
+    def save(self, *args, **kwargs):
+        if should_process_image_field(self, "foto_perfil", kwargs.get("update_fields")):
+            normalize_uncommitted_image_field(
+                self,
+                "foto_perfil",
+                size=PROFILE_IMAGE_SIZE,
+                fit="cover",
+            )
+
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Cliente: {self.user.email}"
     
@@ -162,6 +179,17 @@ class Bartender(BaseModel):
 
     stripe_account_id = models.CharField(max_length=255, blank=True, null=True)
     stripe_onboarding_completo = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if should_process_image_field(self, "foto_perfil", kwargs.get("update_fields")):
+            normalize_uncommitted_image_field(
+                self,
+                "foto_perfil",
+                size=PROFILE_IMAGE_SIZE,
+                fit="cover",
+            )
+
+        super().save(*args, **kwargs)
 
     @property
     def media_avaliacoes(self):
@@ -233,6 +261,13 @@ class Drink(BaseModel):
     def save(self, *args, **kwargs):
         # Garantir validações declaradas em clean()
         self.full_clean()
+        if should_process_image_field(self, "foto", kwargs.get("update_fields")):
+            normalize_uncommitted_image_field(
+                self,
+                "foto",
+                size=DRINK_IMAGE_SIZE,
+                fit="contain",
+            )
         super().save(*args, **kwargs)
     
     
