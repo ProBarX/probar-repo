@@ -266,7 +266,8 @@ class Drink(BaseModel):
                 self,
                 "foto",
                 size=DRINK_IMAGE_SIZE,
-                fit="contain",
+                fit="cover",
+                trim_uniform_border=True,
             )
         super().save(*args, **kwargs)
     

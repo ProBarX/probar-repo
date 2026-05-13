@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { api } from "@/services/api"
 import { BartenderProfileView, type BartenderProfile } from "@/components/bartender/BartenderProfileView"
+import { resolveMediaUrl } from "@/lib/media-url"
 
 function formatDate(iso: string) {
   if (!iso) return "—"
@@ -24,7 +25,7 @@ export default function BartenderProfilePage() {
         nome: data.nome ?? "",
         email: data.email ?? "",
         data_nascimento: data.data_nascimento ?? "",
-        foto_perfil: data.foto_perfil ?? null,
+        foto_perfil: resolveMediaUrl(data.foto_perfil),
         membro_desde: formatDate(data.criado_em),
         especialidades: data.especialidades ?? "",
         anos_experiencia: data.anos_experiencia ?? null,
@@ -39,11 +40,7 @@ export default function BartenderProfilePage() {
         drinks: (data.drinks ?? []).map((d: { id: number; nome: string; foto: string | null }) => ({
           id: d.id,
           nome: d.nome,
-          preview: d.foto
-            ? d.foto.startsWith("http")
-              ? d.foto
-              : `${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}${d.foto}`
-            : null,
+          preview: resolveMediaUrl(d.foto),
         })),
       })
     })
