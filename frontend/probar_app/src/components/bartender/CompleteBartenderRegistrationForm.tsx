@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Camera, Trash2, User, Wine, X } from "lucide-react"
+import { User } from "lucide-react"
+import { DrinksList } from "@/components/bartender/DrinksList"
 
 const steps = [
   {
@@ -136,15 +137,8 @@ export function CompleteBartenderRegistrationForm({
   const [bairro, setBairro] = useState("")
   const [numero, setNumero] = useState("")
   const [error, setError] = useState("")
-  const [drinkModalOpen, setDrinkModalOpen] = useState(false)
-  const [editingDrinkIndex, setEditingDrinkIndex] = useState<number | null>(null)
-  const [modalDrinkName, setModalDrinkName] = useState("")
-  const [modalDrinkFile, setModalDrinkFile] = useState<File | null>(null)
-  const [modalDrinkPreview, setModalDrinkPreview] = useState<string | null>(null)
-  const [modalDrinkError, setModalDrinkError] = useState("")
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const drinkFileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const currentStep = steps[step - 1]
 
@@ -155,77 +149,27 @@ export function CompleteBartenderRegistrationForm({
     setPreview(URL.createObjectURL(selected))
   }
 
-  function openDrinkModal(index?: number) {
-    if (index === undefined && drinks.length >= 6) {
-      setError("Você já cadastrou o máximo de 6 drinks.")
-      return
-    }
-
-    const drink = index !== undefined ? drinks[index] : null
-
-    setEditingDrinkIndex(index ?? null)
-    setModalDrinkName(drink?.nome ?? "")
-    setModalDrinkFile(null)
-    setModalDrinkPreview(drink?.preview ?? null)
-    setModalDrinkError("")
-    setDrinkModalOpen(true)
+  function handleAddDrink(nome: string, file: File | null) {
+    const preview = file ? URL.createObjectURL(file) : null
+    setDrinks((prev) => [...prev, { nome, file, preview }])
   }
 
-  function closeDrinkModal() {
-    setDrinkModalOpen(false)
-    setEditingDrinkIndex(null)
-    setModalDrinkName("")
-    setModalDrinkFile(null)
-    setModalDrinkPreview(null)
-    setModalDrinkError("")
+  function handleDeleteDrink(index: number) {
+    setDrinks((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function handleDrinkModalImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = e.target.files?.[0]
-    if (!selected) return
-
-    setModalDrinkFile(selected)
-    setModalDrinkPreview(URL.createObjectURL(selected))
-  }
-
-  function removeDrink(index: number) {
-    setDrinks((current) => current.filter((_, currentIndex) => currentIndex !== index))
-  }
-
-  function saveDrinkModal() {
-    const nome = modalDrinkName.trim()
-
-    if (!nome) {
-      setModalDrinkError("Informe o nome do drink.")
-      return
-    }
-
-    const hasDuplicate = drinks.some((drink, index) => {
-      if (editingDrinkIndex === index) return false
-      return normalizeDrinkName(drink.nome) === normalizeDrinkName(nome)
-    })
-
-    if (hasDuplicate) {
-      setModalDrinkError("Este drink já foi cadastrado.")
-      return
-    }
-
-    const drinkData = {
-      nome,
-      file: modalDrinkFile,
-      preview: modalDrinkPreview,
-    }
-
-    setDrinks((current) => {
-      if (editingDrinkIndex === null) {
-        return [...current, drinkData]
-      }
-
-      return current.map((drink, index) =>
-        index === editingDrinkIndex ? { ...drink, ...drinkData } : drink
-      )
-    })
-    closeDrinkModal()
+  function handleEditDrink(index: number, nome: string, file: File | null) {
+    setDrinks((prev) =>
+      prev.map((d, i) => {
+        if (i !== index) return d
+        return {
+          ...d,
+          nome,
+          file: file ?? d.file,
+          preview: file ? URL.createObjectURL(file) : d.preview,
+        }
+      })
+    )
   }
 
   function validatePersonalData() {
@@ -538,137 +482,12 @@ export function CompleteBartenderRegistrationForm({
             />
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-              <label style={labelStyle}>Drinks</label>
-              <span style={{ color: "#A7A7A7", fontSize: "12px" }}>Opcional</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => openDrinkModal()}
-              disabled={drinks.length >= 6}
-              style={{
-                alignItems: "center",
-                backgroundColor: "#fff",
-                border: "1px dashed #A7A7A7",
-                borderRadius: "10px",
-                cursor: drinks.length >= 6 ? "not-allowed" : "pointer",
-                display: "flex",
-                gap: "12px",
-                opacity: drinks.length >= 6 ? 0.6 : 1,
-                padding: "16px",
-                textAlign: "left",
-                width: "100%",
-              }}
-            >
-              <div
-                style={{
-                  alignItems: "center",
-                  backgroundColor: "#FFF8D6",
-                  borderRadius: "10px",
-                  color: "#111",
-                  display: "flex",
-                  flexShrink: 0,
-                  height: "44px",
-                  justifyContent: "center",
-                  width: "44px",
-                }}
-              >
-                <Wine size={22} />
-              </div>
-              <div>
-                <span style={{ display: "block", fontSize: "14px", fontWeight: 600 }}>Adicionar drink</span>
-                <span style={{ color: "#888", display: "block", fontSize: "12px", marginTop: "4px" }}>
-                  Inclua nome e foto quando quiser destacar seu cardápio.
-                </span>
-              </div>
-            </button>
-
-            <span style={{ color: "#A7A7A7", fontSize: "12px" }}>
-              Você pode adicionar até 6 drinks.
-            </span>
-
-            {drinks.length > 0 && (
-              <div style={{ display: "grid", gap: "10px" }}>
-                {drinks.map((drink, index) => (
-                  <div
-                    key={`${drink.id ?? "new"}-${index}`}
-                    onClick={() => openDrinkModal(index)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault()
-                        openDrinkModal(index)
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    style={{
-                      alignItems: "center",
-                      backgroundColor: "#fff",
-                      border: "1px solid #E5E5E5",
-                      borderRadius: "10px",
-                      cursor: "pointer",
-                      display: "grid",
-                      gap: "10px",
-                      gridTemplateColumns: "56px 1fr 34px",
-                      padding: "10px",
-                      textAlign: "left",
-                      width: "100%",
-                    }}
-                  >
-                    <div
-                      style={{
-                        alignItems: "center",
-                        backgroundColor: "#f5f5f5",
-                        backgroundImage: drink.preview ? `url(${drink.preview})` : undefined,
-                        backgroundPosition: "center",
-                        backgroundSize: "cover",
-                        border: "1px solid #E5E5E5",
-                        borderRadius: "8px",
-                        display: "flex",
-                        height: "56px",
-                        justifyContent: "center",
-                        overflow: "hidden",
-                        width: "56px",
-                      }}
-                    >
-                      {!drink.preview && <Wine size={20} color="#A7A7A7" />}
-                    </div>
-
-                    <div>
-                      <span style={{ display: "block", fontSize: "14px", fontWeight: 600 }}>{drink.nome}</span>
-                      <span style={{ color: "#888", display: "block", fontSize: "12px", marginTop: "4px" }}>
-                        Clique para editar
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        removeDrink(index)
-                      }}
-                      aria-label={`Remover ${drink.nome}`}
-                      style={{
-                        alignItems: "center",
-                        backgroundColor: "#fff",
-                        border: "1px solid #E5E5E5",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        display: "flex",
-                        height: "34px",
-                        justifyContent: "center",
-                        width: "34px",
-                      }}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <DrinksList
+            drinks={drinks.map((d) => ({ id: d.id, nome: d.nome, preview: d.preview }))}
+            onAdd={handleAddDrink}
+            onEdit={handleEditDrink}
+            onDelete={handleDeleteDrink}
+          />
         </>
       )
     }
@@ -756,145 +575,6 @@ export function CompleteBartenderRegistrationForm({
       </div>
 
       {renderStep()}
-
-      {drinkModalOpen && (
-        <div
-          onClick={closeDrinkModal}
-          style={{
-            alignItems: "center",
-            backgroundColor: "rgba(0, 0, 0, 0.4)",
-            display: "flex",
-            inset: 0,
-            justifyContent: "center",
-            padding: "24px",
-            position: "fixed",
-            zIndex: 50,
-          }}
-        >
-          <div
-            onClick={(event) => event.stopPropagation()}
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: "12px",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "18px",
-              maxWidth: "420px",
-              padding: "24px",
-              width: "100%",
-            }}
-          >
-            <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", gap: "12px" }}>
-              <h3 style={{ fontSize: "20px", fontWeight: 700, margin: 0 }}>
-                {editingDrinkIndex === null ? "Adicionar drink" : "Editar drink"}
-              </h3>
-              <button
-                type="button"
-                onClick={closeDrinkModal}
-                aria-label="Fechar modal de drink"
-                style={{
-                  alignItems: "center",
-                  backgroundColor: "#fff",
-                  border: "1px solid #E5E5E5",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  display: "flex",
-                  height: "34px",
-                  justifyContent: "center",
-                  width: "34px",
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => drinkFileInputRef.current?.click()}
-              style={{
-                alignItems: "center",
-                alignSelf: "center",
-                backgroundColor: "#f5f5f5",
-                backgroundImage: modalDrinkPreview ? `url(${modalDrinkPreview})` : undefined,
-                backgroundPosition: "center",
-                backgroundSize: "cover",
-                border: "1px dashed #A7A7A7",
-                borderRadius: "12px",
-                cursor: "pointer",
-                display: "flex",
-                height: "132px",
-                justifyContent: "center",
-                overflow: "hidden",
-                width: "100%",
-              }}
-            >
-              {!modalDrinkPreview && (
-                <div style={{ alignItems: "center", color: "#888", display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <Wine size={32} color="#A7A7A7" />
-                  <Camera size={18} color="#A7A7A7" />
-                  <span style={{ color: "#888", fontSize: "13px", fontWeight: 600 }}>Adicionar foto</span>
-                </div>
-              )}
-            </button>
-            <input
-              ref={drinkFileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleDrinkModalImageChange}
-              style={{ display: "none" }}
-            />
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <label style={labelStyle}>Nome do drink</label>
-              <input
-                type="text"
-                placeholder="Ex: Mojito"
-                value={modalDrinkName}
-                onChange={(event) => setModalDrinkName(event.target.value)}
-                style={inputStyle}
-              />
-            </div>
-
-            {modalDrinkError && (
-              <p style={{ color: "red", fontSize: "13px", margin: 0, textAlign: "center" }}>{modalDrinkError}</p>
-            )}
-
-            <div style={{ display: "grid", gap: "10px", gridTemplateColumns: "1fr 1fr" }}>
-              <button
-                type="button"
-                onClick={closeDrinkModal}
-                style={{
-                  backgroundColor: "#fff",
-                  border: "1px solid #A7A7A7",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                  fontSize: "15px",
-                  fontWeight: 600,
-                  padding: "12px",
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={saveDrinkModal}
-                style={{
-                  backgroundColor: "#F5C518",
-                  border: "none",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                  fontSize: "15px",
-                  fontWeight: 600,
-                  padding: "12px",
-                }}
-              >
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {error && (
         <p style={{ color: "red", fontSize: "13px", textAlign: "center", margin: 0 }}>{error}</p>
