@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender, Drink
-from core.models import Pedido, Proposta, Chat, Mensagem
+from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao
 from core.enums import PropostaStatus
 from django.utils.translation import gettext_lazy as _
 from decimal import Decimal
@@ -465,3 +465,14 @@ class ChatSerializer(serializers.ModelSerializer):
             'bartender_nome', 'bartender_especialidade',
             'evento_nome', 'mensagens', 'criado_em',
         ]
+
+
+class AvaliacaoSerializer(serializers.ModelSerializer):
+    cliente_nome = serializers.CharField(source='pedido.cliente.user.name', read_only=True)
+    evento_nome = serializers.CharField(source='pedido.evento.nome', read_only=True)
+    pedido_id = serializers.IntegerField(source='pedido.id', read_only=True)
+
+    class Meta:
+        model = Avaliacao
+        fields = ['id', 'pedido_id', 'nota', 'comentario', 'cliente_nome', 'evento_nome', 'criado_em']
+        read_only_fields = ['id', 'criado_em']

@@ -7,8 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample
 from core.enums import PedidoStatus, TipoUsuario
-from core.models import Pedido, Proposta, Chat, Mensagem
-from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PedidoCreateSerializer
+from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao
+from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PedidoCreateSerializer, AvaliacaoSerializer
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -446,3 +446,22 @@ class MensagemViewSet(viewsets.ModelViewSet):
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
+
+
+@extend_schema(tags=["Avaliações"])
+class AvaliacaoViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = AvaliacaoSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Avaliacao.objects.select_related(
+                'pedido__cliente__user', 'pedido__bartender__user', 'pedido__evento'
+            ).all()
+        return Avaliacao.objects.select_related(
+            'pedido__cliente__user', 'pedido__bartender__user', 'pedido__evento'
+        ).filter(
+            pedido__bartender__user=user,
+            pedido__status=PedidoStatus.CONCLUIDO,
+        ).order_by('-criado_em')
