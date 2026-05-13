@@ -10,13 +10,13 @@ export type Bartender = {
   user_id: number
   email: string
   nome: string
-  valor_hora: number
+  valor_hora: number | string
   especialidades: string
   foto_perfil: string | null
-  anos_experiencia: number
+  anos_experiencia: number | null
   media_avaliacoes: number
   total_avaliacoes: number
-  descricao_profissional?: string
+  descricao_profissional?: string | null
   drinks?: Drink[]
 }
 

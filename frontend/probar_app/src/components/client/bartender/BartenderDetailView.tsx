@@ -3,14 +3,15 @@
 import { useState } from "react"
 import type { CSSProperties } from "react"
 import { useRouter } from "next/navigation"
+import { formatSpecialty } from "@/lib/bartender-format"
 
 export type BartenderDetail = {
   user_id: number
   email: string
   nome: string
   especialidades: string
-  valor_hora: number
-  anos_experiencia: number
+  valor_hora: number | string
+  anos_experiencia: number | null
   descricao_profissional: string
   foto_perfil: string | null
   drinks: {
@@ -85,8 +86,13 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             flexShrink: 0,
           }}>
             <img
-              src={bartender.foto_perfil ?? "/bartender-placeholder.jpg"}
+              src={bartender.foto_perfil ?? "/bartender-placeholder.svg"}
               alt={bartender.nome}
+              onError={(event) => {
+                if (!event.currentTarget.src.endsWith("/bartender-placeholder.svg")) {
+                  event.currentTarget.src = "/bartender-placeholder.svg"
+                }
+              }}
               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
             />
             <span style={floatingRatingBadgeStyle}>
@@ -147,7 +153,7 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "700", lineHeight: 1.2 }}>{bartender.nome}</h2>
-                <p style={{ color: "#888", margin: "4px 0 0", fontSize: "13px" }}>{bartender.especialidades}</p>
+                <p style={{ color: "#888", margin: "4px 0 0", fontSize: "13px" }}>{formatSpecialty(bartender.especialidades)}</p>
               </div>
               <span style={ratingBadgeStyle}>
                 <span style={ratingStarStyle}>{"\u2605"}</span>
