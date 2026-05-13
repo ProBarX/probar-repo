@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { api } from "@/services/api"
 import type { Event } from "@/types/user"
 import { ProfileView, type ClientProfile } from "@/components/client/profile/ProfileView"
+import { resolveMediaUrl } from "@/lib/media-url"
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ClientProfile | null>(null)
@@ -26,7 +27,7 @@ export default function ProfilePage() {
         email:           cliente.email,
         data_nascimento: dataISO,
         membro_desde:    formatDate(cliente.criado_em),
-        foto_perfil:     cliente.foto_perfil ?? null,
+        foto_perfil:     resolveMediaUrl(cliente.foto_perfil),
         total_eventos:   eventos.length,
         eventos: eventos.map((e: Event) => ({
           nome:   e.nome,

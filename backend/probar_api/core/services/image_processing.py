@@ -6,12 +6,14 @@ from typing import Literal
 
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageOps, UnidentifiedImageError
 
 
 PROFILE_IMAGE_SIZE = (900, 900)
-DRINK_IMAGE_SIZE = (900, 900)
+DRINK_IMAGE_SIZE = (900, 600)
 JPEG_QUALITY = 90
+BORDER_TRIM_THRESHOLD = 12
+NEAR_WHITE_THRESHOLD = 245
 
 FitMode = Literal["cover", "contain"]
 
@@ -30,6 +32,7 @@ def normalize_uncommitted_image_field(
     *,
     size: tuple[int, int],
     fit: FitMode = "cover",
+    trim_uniform_border: bool = False,
 ) -> bool:
     field_file = getattr(instance, field_name, None)
     if not field_file or getattr(field_file, "_committed", True):
@@ -40,6 +43,7 @@ def normalize_uncommitted_image_field(
         field_file.name,
         size=size,
         fit=fit,
+        trim_uniform_border=trim_uniform_border,
     )
     field_file.save(filename, content, save=False)
     return True
@@ -51,6 +55,7 @@ def normalize_committed_image_field(
     *,
     size: tuple[int, int],
     fit: FitMode = "cover",
+    trim_uniform_border: bool = False,
 ) -> bool:
     field_file = getattr(instance, field_name, None)
     if not field_file:
@@ -63,6 +68,7 @@ def normalize_committed_image_field(
             field_file.name,
             size=size,
             fit=fit,
+            trim_uniform_border=trim_uniform_border,
         )
     finally:
         field_file.close()
@@ -72,14 +78,27 @@ def normalize_committed_image_field(
     return True
 
 
-def image_field_is_normalized(field_file, *, size: tuple[int, int]) -> bool:
+def image_field_is_normalized(
+    field_file,
+    *,
+    size: tuple[int, int],
+    min_content_ratio: float | None = None,
+) -> bool:
     if not field_file:
         return False
 
     field_file.open("rb")
     try:
         with Image.open(field_file.file) as image:
-            return image.size == size and image.format == "JPEG"
+            if image.size != size or image.format != "JPEG":
+                return False
+
+            if min_content_ratio is None:
+                return True
+
+            image = _convert_to_rgb(image)
+            content_ratio = _visible_content_ratio(image)
+            return content_ratio is None or content_ratio >= min_content_ratio
     finally:
         field_file.close()
 
@@ -90,6 +109,7 @@ def normalize_image_file(
     *,
     size: tuple[int, int],
     fit: FitMode = "cover",
+    trim_uniform_border: bool = False,
 ) -> tuple[ContentFile, str]:
     try:
         file_obj.seek(0)
@@ -100,6 +120,9 @@ def normalize_image_file(
         with Image.open(file_obj) as image:
             image = ImageOps.exif_transpose(image)
             image = _convert_to_rgb(image)
+
+            if trim_uniform_border:
+                image = _trim_uniform_border(image)
 
             if fit == "cover":
                 image = ImageOps.fit(
@@ -154,6 +177,41 @@ def _contain(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     y = (size[1] - contained.height) // 2
     canvas.paste(contained, (x, y))
     return canvas
+
+
+def _trim_uniform_border(image: Image.Image) -> Image.Image:
+    bbox = _visible_content_bbox(image)
+    if not bbox:
+        return image
+
+    if bbox == (0, 0, image.width, image.height):
+        return image
+
+    return image.crop(bbox)
+
+
+def _visible_content_ratio(image: Image.Image) -> float | None:
+    bbox = _visible_content_bbox(image)
+    if not bbox:
+        return None
+
+    visible_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+    return visible_area / (image.width * image.height)
+
+
+def _visible_content_bbox(image: Image.Image):
+    background_color = image.getpixel((0, 0))
+    if not _is_near_white(background_color):
+        return (0, 0, image.width, image.height)
+
+    background = Image.new("RGB", image.size, background_color)
+    diff = ImageChops.difference(image, background).convert("L")
+    mask = diff.point(lambda value: 255 if value > BORDER_TRIM_THRESHOLD else 0)
+    return mask.getbbox()
+
+
+def _is_near_white(color: tuple[int, int, int]) -> bool:
+    return all(channel >= NEAR_WHITE_THRESHOLD for channel in color)
 
 
 def _jpeg_filename(original_name: str) -> str:

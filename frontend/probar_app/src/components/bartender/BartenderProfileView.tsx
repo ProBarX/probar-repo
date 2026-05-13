@@ -18,15 +18,9 @@ import {
 } from "lucide-react"
 import { api } from "@/services/api"
 import { DrinksList, type DrinkDisplayItem } from "@/components/bartender/DrinksList"
+import { resolveMediaUrl } from "@/lib/media-url"
 
 const PRIMARY_YELLOW = "#F5C518"
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-
-function resolveFotoUrl(foto: string | null | undefined): string | null {
-  if (!foto) return null
-  if (foto.startsWith("http")) return foto
-  return `${API_URL}${foto}`
-}
 
 export type BartenderProfile = {
   id: number
@@ -156,7 +150,7 @@ export function BartenderProfileView({ profile, onUpdate }: Props) {
       onUpdate?.({
         nome: data.nome,
         data_nascimento: data.data_nascimento,
-        foto_perfil: data.foto_perfil,
+        foto_perfil: resolveMediaUrl(data.foto_perfil),
         especialidades: data.especialidades,
         anos_experiencia: data.anos_experiencia,
         valor_hora: data.valor_hora,
@@ -184,7 +178,7 @@ export function BartenderProfileView({ profile, onUpdate }: Props) {
     const { data } = await api.post("/drinks/", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     })
-    setDrinks((prev) => [...prev, { id: data.id, nome: data.nome, preview: resolveFotoUrl(data.foto) }])
+    setDrinks((prev) => [...prev, { id: data.id, nome: data.nome, preview: resolveMediaUrl(data.foto) }])
   }
 
   async function handleEditDrink(index: number, nome: string, file: File | null) {
@@ -201,7 +195,7 @@ export function BartenderProfileView({ profile, onUpdate }: Props) {
     })
     setDrinks((prev) =>
       prev.map((d, i) =>
-        i === index ? { id: data.id, nome: data.nome, preview: data.foto ? resolveFotoUrl(data.foto) : d.preview } : d
+        i === index ? { id: data.id, nome: data.nome, preview: data.foto ? resolveMediaUrl(data.foto) : d.preview } : d
       )
     )
   }
@@ -245,7 +239,12 @@ export function BartenderProfileView({ profile, onUpdate }: Props) {
           }}
         >
           {fotoPreview ? (
-            <img src={fotoPreview} alt="Foto de perfil" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img
+              src={fotoPreview}
+              alt="Foto de perfil"
+              onError={() => setFotoPreview(null)}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
           ) : (
             initials
           )}

@@ -8,8 +8,9 @@ from drf_spectacular.views import (
 from core.views import CustomTokenView, CustomTokenRefreshView
 from .router.api import api_urls
 from django.conf import settings
-from django.conf.urls.static import static
+from django.views.static import serve as serve_media
 from core.api.v1.auth_views import GoogleAuthView, GoogleAuthVerifyView
+from django.urls import re_path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -45,4 +46,10 @@ urlpatterns = [
     ),
 ]
 if settings.SERVE_MEDIA_FILES:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += [
+        re_path(
+            r"^media/(?P<path>.*)$",
+            serve_media,
+            {"document_root": settings.MEDIA_ROOT},
+        )
+    ]

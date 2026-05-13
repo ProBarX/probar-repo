@@ -1,4 +1,5 @@
 import { formatCurrency, formatExperience, formatSpecialty } from "@/lib/bartender-format"
+import { resolveMediaUrl } from "@/lib/media-url"
 
 type BartenderCardProps = {
   name: string
@@ -27,6 +28,7 @@ export function BartenderCard({
   const reviewsText = totalReviews > 0 ? ` (${totalReviews})` : ""
   const experienceText = formatExperience(experience)
   const descriptionText = description?.trim() || "Perfil em atualização."
+  const imageSrc = resolveMediaUrl(image) ?? "/bartender-placeholder.svg"
 
   return (
     <div style={{
@@ -47,7 +49,7 @@ export function BartenderCard({
         }}
       >
         <img
-          src={image}
+          src={imageSrc}
           alt={name}
           onError={(event) => {
             if (!event.currentTarget.src.endsWith("/bartender-placeholder.svg")) {

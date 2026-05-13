@@ -4,6 +4,7 @@ import { useState, useRef } from "react"
 import type { CSSProperties } from "react"
 import { api } from "@/services/api"
 import type { ApiError } from "@/types/user"
+import { resolveMediaUrl } from "@/lib/media-url"
 
 export type ClientProfile = {
   nome: string
@@ -93,7 +94,7 @@ export function ProfileView({ profile, onUpdate }: Props) {
         nome:            data.name,
         email:           data.email,
         data_nascimento: data.data_nascimento,
-        foto_perfil:     data.foto_perfil,
+        foto_perfil:     resolveMediaUrl(data.foto_perfil),
       })
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err: unknown) {
@@ -130,7 +131,12 @@ export function ProfileView({ profile, onUpdate }: Props) {
           title="Trocar foto"
         >
           {fotoPreview ? (
-            <img src={fotoPreview} alt="Foto de perfil" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img
+              src={fotoPreview}
+              alt="Foto de perfil"
+              onError={() => setFotoPreview(null)}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
           ) : (
             initials
           )}

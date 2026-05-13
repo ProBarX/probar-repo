@@ -40,6 +40,8 @@ class Command(BaseCommand):
                 "foto_perfil",
                 PROFILE_IMAGE_SIZE,
                 "cover",
+                False,
+                None,
                 "clientes",
             ),
             (
@@ -47,18 +49,30 @@ class Command(BaseCommand):
                 "foto_perfil",
                 PROFILE_IMAGE_SIZE,
                 "cover",
+                False,
+                None,
                 "bartenders",
             ),
             (
                 Drink.objects.filter(foto__isnull=False).exclude(foto=""),
                 "foto",
                 DRINK_IMAGE_SIZE,
-                "contain",
+                "cover",
+                True,
+                0.2,
                 "drinks",
             ),
         ]
 
-        for queryset, field_name, size, fit, label in targets:
+        for (
+            queryset,
+            field_name,
+            size,
+            fit,
+            trim_uniform_border,
+            min_content_ratio,
+            label,
+        ) in targets:
             for instance in queryset.iterator():
                 field_file = getattr(instance, field_name)
                 if not field_file:
@@ -73,7 +87,11 @@ class Command(BaseCommand):
                     continue
 
                 try:
-                    if image_field_is_normalized(field_file, size=size):
+                    if image_field_is_normalized(
+                        field_file,
+                        size=size,
+                        min_content_ratio=min_content_ratio,
+                    ):
                         ja_normalizadas += 1
                         continue
                 except Exception as exc:
@@ -93,6 +111,7 @@ class Command(BaseCommand):
                         field_name,
                         size=size,
                         fit=fit,
+                        trim_uniform_border=trim_uniform_border,
                     )
                     normalizadas += 1
                 except Exception as exc:
