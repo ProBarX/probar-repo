@@ -3,6 +3,7 @@
 import { useState, useRef } from "react"
 import type { CSSProperties } from "react"
 import { api } from "@/services/api"
+import type { ApiError } from "@/types/user"
 
 export type ClientProfile = {
   nome: string
@@ -95,8 +96,9 @@ export function ProfileView({ profile, onUpdate }: Props) {
         foto_perfil:     data.foto_perfil,
       })
       setTimeout(() => setSaveSuccess(false), 3000)
-    } catch (err: any) {
-      setSaveError(err?.response?.data?.detail ?? "Erro ao salvar. Tente novamente.")
+    } catch (err: unknown) {
+      const apiError = err as ApiError
+      setSaveError(apiError?.response?.data?.detail ?? "Erro ao salvar. Tente novamente.")
     } finally {
       setSaving(false)
     }

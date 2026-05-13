@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { api } from "@/services/api"
+import type { Event } from "@/types/user"
 import { ProfileView, type ClientProfile } from "@/components/client/profile/ProfileView"
 
 export default function ProfilePage() {
@@ -27,7 +28,7 @@ export default function ProfilePage() {
         membro_desde:    formatDate(cliente.criado_em),
         foto_perfil:     cliente.foto_perfil ?? null,
         total_eventos:   eventos.length,
-        eventos: eventos.map((e: any) => ({
+        eventos: eventos.map((e: Event) => ({
           nome:   e.nome,
           data:   formatDate(e.data),
           status: e.status,
