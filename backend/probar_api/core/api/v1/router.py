@@ -11,6 +11,7 @@ from .viewsets import (
 	PropostaViewSet,
 	ChatViewSet,
 	MensagemViewSet,
+	AvaliacaoViewSet,
 )
 
 from django.urls import path
@@ -38,6 +39,7 @@ router.register("pedidos", PedidoViewSet, basename="pedidos")
 router.register("propostas", PropostaViewSet, basename="propostas")
 router.register("chats", ChatViewSet, basename="chats")
 router.register("mensagens", MensagemViewSet, basename="mensagens")
+router.register("avaliacoes", AvaliacaoViewSet, basename="avaliacoes")
 
 urlpatterns = router.urls + [
     path("stripe/onboarding/", criar_link_onboarding),
