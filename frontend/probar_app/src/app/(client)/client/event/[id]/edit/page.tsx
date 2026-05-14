@@ -104,7 +104,7 @@ export default function EditEventPage({ params }: Props) {
 
   return (
     <main style={pageStyle}>
-      <button type="button" onClick={() => router.push(chooseEventPath())} style={backButtonStyle}>
+      <button type="button" onClick={() => router.back()} style={backButtonStyle}>
         <ArrowLeft size={16} />
         Voltar
       </button>
