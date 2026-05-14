@@ -188,11 +188,83 @@ STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+SUPABASE_STORAGE_BUCKET = env("SUPABASE_STORAGE_BUCKET", default="")
+SUPABASE_S3_ENDPOINT = env("SUPABASE_S3_ENDPOINT", default="")
+SUPABASE_S3_REGION = env("SUPABASE_S3_REGION", default="")
+SUPABASE_S3_ACCESS_KEY_ID = env("SUPABASE_S3_ACCESS_KEY_ID", default="")
+SUPABASE_S3_SECRET_ACCESS_KEY = env("SUPABASE_S3_SECRET_ACCESS_KEY", default="")
+SUPABASE_PUBLIC_STORAGE_URL = env("SUPABASE_PUBLIC_STORAGE_URL", default="")
+USE_SUPABASE_STORAGE = env.bool(
+    "USE_SUPABASE_STORAGE",
+    default=all(
+        [
+            SUPABASE_STORAGE_BUCKET,
+            SUPABASE_S3_ENDPOINT,
+            SUPABASE_S3_REGION,
+            SUPABASE_S3_ACCESS_KEY_ID,
+            SUPABASE_S3_SECRET_ACCESS_KEY,
+            SUPABASE_PUBLIC_STORAGE_URL,
+        ]
+    ),
+)
+
+if USE_SUPABASE_STORAGE:
+    missing_supabase_storage_settings = [
+        name
+        for name, value in {
+            "SUPABASE_STORAGE_BUCKET": SUPABASE_STORAGE_BUCKET,
+            "SUPABASE_S3_ENDPOINT": SUPABASE_S3_ENDPOINT,
+            "SUPABASE_S3_REGION": SUPABASE_S3_REGION,
+            "SUPABASE_S3_ACCESS_KEY_ID": SUPABASE_S3_ACCESS_KEY_ID,
+            "SUPABASE_S3_SECRET_ACCESS_KEY": SUPABASE_S3_SECRET_ACCESS_KEY,
+            "SUPABASE_PUBLIC_STORAGE_URL": SUPABASE_PUBLIC_STORAGE_URL,
+        }.items()
+        if not value
+    ]
+    if missing_supabase_storage_settings:
+        raise RuntimeError(
+            "Supabase Storage esta habilitado, mas faltam variaveis: "
+            + ", ".join(missing_supabase_storage_settings)
+        )
+
+    MEDIA_URL = f"{SUPABASE_PUBLIC_STORAGE_URL.rstrip('/')}/"
+
+    STORAGES = {
+        "default": {
+            "BACKEND": "core.storage_backends.SupabaseMediaStorage",
+            "OPTIONS": {
+                "bucket_name": SUPABASE_STORAGE_BUCKET,
+                "endpoint_url": SUPABASE_S3_ENDPOINT,
+                "region_name": SUPABASE_S3_REGION,
+                "access_key": SUPABASE_S3_ACCESS_KEY_ID,
+                "secret_key": SUPABASE_S3_SECRET_ACCESS_KEY,
+                "addressing_style": "path",
+                "signature_version": "s3v4",
+                "file_overwrite": False,
+                "querystring_auth": False,
+                "default_acl": None,
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+
 LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 IS_LOCAL_DEVELOPMENT = any(host in LOCAL_HOSTS for host in ALLOWED_HOSTS)
 SERVE_MEDIA_FILES = env.bool(
     "SERVE_MEDIA_FILES",
-    default=DEBUG or "runserver" in sys.argv or IS_LOCAL_DEVELOPMENT,
+    default=not USE_SUPABASE_STORAGE and (DEBUG or "runserver" in sys.argv or IS_LOCAL_DEVELOPMENT),
 )
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
