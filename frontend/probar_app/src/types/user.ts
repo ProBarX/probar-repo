@@ -7,22 +7,20 @@ export interface User {
     criado_em?: string
 }
 
-// Status dos eventos
-export type EventStatus = "Concluído" | "Em andamento" | "Cancelado"
+export type EventStatus = "Em andamento" | "Confirmado" | "Finalizado" | "Cancelado"
 
-// Tipo para eventos retornados pela API
 export interface Event {
     id?: number
     nome: string
     data: string
-    status: EventStatus
-    [key: string]: unknown // para aceitar outros campos da API
+    status?: string
+    [key: string]: unknown
 }
 
-// Tipo do erro retornado pelo axios com a resposta do Django
 export interface ApiErrorResponse {
     detail?: string
-    [key: string]: string | string[] | undefined
+    erro?: string
+    [key: string]: unknown
 }
 
 export interface ApiError {

@@ -1,25 +1,21 @@
 "use client"
 
-import { use, useState, useEffect } from "react"
+import type { CSSProperties } from "react"
+import { use, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { fetchEvento, updateEvento, apiToForm, type EventoForm } from "@/services/useEvent"
-import type { ApiError } from "@/types/user"
-
-function formDateToInput(brDate: string): string {
-  if (!brDate || !brDate.includes("/")) return ""
-  const [day, month, year] = brDate.split("/")
-  return `${year}-${month}-${day}`
-}
-function inputDateToForm(isoDate: string): string {
-  if (!isoDate || !isoDate.includes("-")) return ""
-  const [year, month, day] = isoDate.split("-")
-  return `${day}/${month}/${year}`
-}
-
-const emptyForm: EventoForm = {
-  cep: "", rua: "", numero: "", semNumero: false, complemento: "",
-  nome: "", quantidade: "", descricao: "", data: "", horarioInicio: "", horarioFim: "",
-}
+import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react"
+import { EventForm } from "@/components/client/event/EventForm"
+import { getApiErrorMessage } from "@/lib/api-error"
+import {
+  apiToForm,
+  emptyEventoForm,
+  fetchEvento,
+  hasEventoFormErrors,
+  updateEvento,
+  validateEventoForm,
+  type EventoForm,
+  type EventoFormErrors,
+} from "@/services/useEvent"
 
 type Props = { params: Promise<{ id: string }> }
 
@@ -28,180 +24,168 @@ export default function EditEventPage({ params }: Props) {
   const searchParams = useSearchParams()
   const { id } = use(params)
   const eventId = Number(id)
+  const isValidEventId = Number.isInteger(eventId) && eventId > 0
 
-  const [form, setForm] = useState<EventoForm>(emptyForm)
+  const [form, setForm] = useState<EventoForm>(emptyEventoForm)
+  const [errors, setErrors] = useState<EventoFormErrors>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchEvento(eventId)
-      .then((data) => setForm(apiToForm(data)))
-      .catch(() => setError("Não foi possível carregar o evento."))
-      .finally(() => setLoading(false))
-  }, [eventId])
+    if (!isValidEventId) {
+      setLoadError("Evento invalido.")
+      setLoading(false)
+      return
+    }
 
-  function handleChange(field: string, value: string | boolean) {
-    setForm((prev) => ({ ...prev, [field]: value }))
+    let active = true
+
+    fetchEvento(eventId)
+      .then((data) => {
+        if (active) setForm(apiToForm(data))
+      })
+      .catch((err) => {
+        if (active) {
+          setLoadError(getApiErrorMessage(err, "Nao foi possivel carregar o evento."))
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [eventId, isValidEventId])
+
+  function handleChange(field: keyof EventoForm, value: string | boolean) {
+    setForm((prev) => ({ ...prev, [field]: value } as EventoForm))
+    setErrors((prev) => {
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+    setSaveError(null)
   }
 
   function chooseEventPath() {
     const queryParams = new URLSearchParams(searchParams.toString())
-    queryParams.set("evento", String(eventId))
+    if (isValidEventId) queryParams.set("evento", String(eventId))
 
     const query = queryParams.toString()
     return `/client/event/choose${query ? `?${query}` : ""}`
   }
 
   async function handleSave() {
+    if (!isValidEventId) return
+
+    const validation = validateEventoForm(form)
+    setErrors(validation)
+
+    if (hasEventoFormErrors(validation)) {
+      setSaveError("Revise os campos destacados para salvar o evento.")
+      return
+    }
+
     setSaving(true)
-    setError(null)
+    setSaveError(null)
+
     try {
       await updateEvento(eventId, form)
       router.push(chooseEventPath())
     } catch (err) {
-      const apiErr = err as ApiError
-      const detail = apiErr?.response?.data
-        ? JSON.stringify(apiErr.response.data, null, 2)
-        : "Verifique os dados e tente novamente."
-      setError(`Erro: ${detail}`)
+      setSaveError(getApiErrorMessage(err, "Nao foi possivel atualizar o evento."))
     } finally {
       setSaving(false)
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "12px 16px", borderRadius: "8px",
-    border: "0.5px solid #ddd", fontSize: "16px", color: "#1a1a1a",
-    fontFamily: "inherit", outline: "none", boxSizing: "border-box",
-  }
-  const labelStyle: React.CSSProperties = {
-    fontSize: "15px", color: "#888", marginBottom: "6px", display: "block",
-  }
-
-  if (loading) return <div style={{ padding: "40px", color: "#888" }}>Carregando evento...</div>
-
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
-        <button
-          onClick={() => router.push(chooseEventPath())}
-          style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#888" }}
-        >
-          ‹ <span style={{ fontSize: "18px", fontWeight: 500 }}>Voltar</span>
-        </button>
-      </div>
+    <main style={pageStyle}>
+      <button type="button" onClick={() => router.push(chooseEventPath())} style={backButtonStyle}>
+        <ArrowLeft size={16} />
+        Voltar
+      </button>
 
-      <h2 style={{ fontSize: "32px", fontWeight: 600, marginBottom: "24px" }}>Editar evento</h2>
-
-      {error && (
-        <pre style={{
-          color: "#e53e3e", fontSize: "13px", marginBottom: "16px",
-          background: "#fff5f5", padding: "12px", borderRadius: "8px",
-          whiteSpace: "pre-wrap", wordBreak: "break-word",
-        }}>
-          {error}
-        </pre>
+      {loading && (
+        <section style={statePanelStyle}>
+          <Loader2 size={24} className="animate-spin" />
+          <span>Carregando evento...</span>
+        </section>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-        <div>
-          <label style={labelStyle}>CEP do local do evento</label>
-          <input type="text" value={form.cep}
-            onChange={(e) => handleChange("cep", e.target.value)} style={inputStyle} />
-        </div>
+      {!loading && loadError && (
+        <section style={statePanelStyle}>
+          <AlertCircle size={26} color="#991B1B" />
+          <h1 style={stateTitleStyle}>Evento indisponivel</h1>
+          <p style={stateTextStyle}>{loadError}</p>
+        </section>
+      )}
 
-        <div>
-          <label style={labelStyle}>Rua / Avenida</label>
-          <input type="text" value={form.rua}
-            onChange={(e) => handleChange("rua", e.target.value)} style={inputStyle} />
-        </div>
-
-        <div>
-          <label style={labelStyle}>Número</label>
-          <div style={{ position: "relative" }}>
-            <input type="text" value={form.numero} disabled={form.semNumero}
-              onChange={(e) => handleChange("numero", e.target.value)}
-              style={{ ...inputStyle, paddingRight: "120px", opacity: form.semNumero ? 0.4 : 1 }}
-            />
-            <div style={{
-              position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)",
-              display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", color: "#888", whiteSpace: "nowrap",
-            }}>
-              Sem Número
-              <div onClick={() => handleChange("semNumero", !form.semNumero)} style={{
-                width: "28px", height: "16px", background: form.semNumero ? "#F5C518" : "#ddd",
-                borderRadius: "8px", cursor: "pointer", position: "relative", flexShrink: 0, transition: "background 0.15s",
-              }}>
-                <div style={{
-                  position: "absolute", width: "12px", height: "12px", background: "#fff",
-                  borderRadius: "50%", top: "2px", left: form.semNumero ? "14px" : "2px", transition: "left 0.15s",
-                }} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label style={labelStyle}>Complemento (opcional)</label>
-          <input type="text" placeholder="Ex: 201" value={form.complemento}
-            onChange={(e) => handleChange("complemento", e.target.value)} style={inputStyle} />
-        </div>
-
-        <div>
-          <label style={labelStyle}>Nome do evento</label>
-          <input type="text" value={form.nome}
-            onChange={(e) => handleChange("nome", e.target.value)} style={inputStyle} />
-        </div>
-
-        <div>
-          <label style={labelStyle}>Quantidade de pessoas</label>
-          <input type="number" min={1} value={form.quantidade}
-            onChange={(e) => handleChange("quantidade", e.target.value)} style={inputStyle} />
-        </div>
-
-        <div>
-          <label style={labelStyle}>Descrição do evento</label>
-          <textarea maxLength={128} value={form.descricao}
-            onChange={(e) => handleChange("descricao", e.target.value)}
-            style={{ ...inputStyle, height: "100px", resize: "none" }}
-          />
-          <span style={{ fontSize: "13px", color: "#aaa" }}>{form.descricao.length}/128</span>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div>
-            <label style={labelStyle}>Data</label>
-            <input
-              type="date"
-              value={formDateToInput(form.data)}
-              onChange={(e) => handleChange("data", inputDateToForm(e.target.value))}
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label style={labelStyle}>Horário de início</label>
-              <input type="time" value={form.horarioInicio}
-                onChange={(e) => handleChange("horarioInicio", e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Horário de fim</label>
-              <input type="time" value={form.horarioFim}
-                onChange={(e) => handleChange("horarioFim", e.target.value)} style={inputStyle} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <button onClick={handleSave} disabled={saving} style={{
-        width: "459px", padding: "14px", background: saving ? "#ddd" : "#F5C518",
-        border: "none", borderRadius: "20px", fontSize: "17px", fontWeight: 600,
-        cursor: saving ? "not-allowed" : "pointer", margin: "24px auto 0 auto",
-        display: "block", color: "#1a1a1a",
-      }}>
-        {saving ? "Salvando..." : "Salvar"}
-      </button>
-    </div>
+      {!loading && !loadError && (
+        <EventForm
+          title="Editar evento"
+          description="Atualize as informacoes do evento antes de enviar ou continuar a negociacao."
+          submitLabel="Salvar alteracoes"
+          form={form}
+          errors={errors}
+          errorMessage={saveError}
+          saving={saving}
+          onChange={handleChange}
+          onSubmit={handleSave}
+        />
+      )}
+    </main>
   )
+}
+
+const pageStyle: CSSProperties = {
+  maxWidth: 900,
+  margin: "0 auto",
+  display: "grid",
+  gap: 18,
+}
+
+const backButtonStyle: CSSProperties = {
+  width: "fit-content",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  border: "1px solid #D1D5DB",
+  background: "#fff",
+  color: "#111827",
+  borderRadius: 8,
+  padding: "9px 12px",
+  cursor: "pointer",
+  fontWeight: 700,
+}
+
+const statePanelStyle: CSSProperties = {
+  minHeight: 280,
+  border: "1px solid #E5E7EB",
+  borderRadius: 8,
+  background: "#fff",
+  display: "grid",
+  placeItems: "center",
+  alignContent: "center",
+  gap: 10,
+  color: "#6B7280",
+  padding: 24,
+  textAlign: "center",
+}
+
+const stateTitleStyle: CSSProperties = {
+  margin: 0,
+  color: "#111827",
+  fontSize: 22,
+  fontWeight: 800,
+}
+
+const stateTextStyle: CSSProperties = {
+  margin: 0,
+  color: "#6B7280",
+  fontSize: 14,
+  lineHeight: 1.5,
 }

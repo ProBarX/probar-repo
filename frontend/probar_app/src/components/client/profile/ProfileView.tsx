@@ -3,7 +3,7 @@
 import { useState, useRef } from "react"
 import type { CSSProperties } from "react"
 import { api } from "@/services/api"
-import type { ApiError } from "@/types/user"
+import type { ApiError, EventStatus } from "@/types/user"
 import { resolveMediaUrl } from "@/lib/media-url"
 
 export type ClientProfile = {
@@ -16,7 +16,7 @@ export type ClientProfile = {
   eventos: {
     nome: string
     data: string
-    status: "Concluído" | "Em andamento" | "Cancelado"
+    status: EventStatus
   }[]
 }
 
@@ -43,9 +43,10 @@ export function ProfileView({ profile, onUpdate }: Props) {
     .toUpperCase()
 
   const statusColor: Record<string, string> = {
-    "Concluído":    "#888",
     "Em andamento": "#d4860a",
-    "Cancelado":    "#e53e3e",
+    "Confirmado": "#185FA5",
+    "Finalizado": "#2e7d32",
+    "Cancelado": "#e53e3e",
   }
 
   function formatDateDisplay(iso: string) {
