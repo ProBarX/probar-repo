@@ -167,7 +167,7 @@ export default function HomePage() {
       )}
 
       {!loading && !error && filtered.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: filtered.length < 3 ? "repeat(auto-fit, 260px)" : "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px" }}>
           {filtered.map((b, index) => (
             <BartenderCard
               key={b.user_id ?? b.email + index}
