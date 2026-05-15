@@ -5,13 +5,53 @@ from urllib.parse import urlparse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import serializers, status
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 
 from core.enums import PagamentoStatus
 from core.models import Pedido, Pagamento
 from core.services import stripe_service
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+TAG_STRIPE_ONBOARDING = "Pagamentos - Onboarding Stripe"
+TAG_STRIPE_PAGAMENTOS = "Pagamentos - Stripe"
+TAG_STRIPE_WEBHOOKS = "Pagamentos - Webhooks Stripe"
+
+
+class StripeErroSerializer(serializers.Serializer):
+    erro = serializers.CharField()
+
+
+class StripeOnboardingResponseSerializer(serializers.Serializer):
+    url = serializers.URLField()
+    tem_conta_stripe = serializers.BooleanField()
+    onboarding_completo = serializers.BooleanField()
+
+
+class StripeStatusResponseSerializer(serializers.Serializer):
+    tem_conta_stripe = serializers.BooleanField()
+    onboarding_completo = serializers.BooleanField()
+
+
+class StripePagamentoResponseSerializer(serializers.Serializer):
+    pagamento_id = serializers.IntegerField()
+    pedido_id = serializers.IntegerField()
+    valor = serializers.CharField()
+    status = serializers.CharField()
+    mode = serializers.ChoiceField(choices=["payment", "setup"])
+    finalizado_pelo_cliente = serializers.BooleanField()
+    payment_intent_id = serializers.CharField(allow_null=True)
+    setup_intent_id = serializers.CharField(allow_null=True)
+    stripe_resource_id = serializers.CharField(allow_null=True)
+    payment_method_id = serializers.CharField(allow_null=True)
+    client_secret = serializers.CharField(allow_null=True)
+    stripe_status = serializers.CharField(allow_null=True)
+
+
+class StripeStatusMessageSerializer(serializers.Serializer):
+    status = serializers.CharField()
 
 
 def _stripe_attr(obj, key, default=None):
@@ -87,6 +127,33 @@ def _stripe_redirect_urls(request):
 # ONBOARDING
 # =========================
 
+@extend_schema(
+    tags=[TAG_STRIPE_ONBOARDING],
+    summary="Criar link de onboarding Stripe",
+    description=(
+        "Cria ou reutiliza a conta Stripe Express do bartender autenticado e retorna "
+        "um link temporário para concluir o onboarding. Apenas usuários do tipo bartender podem usar."
+    ),
+    request=None,
+    responses={
+        200: StripeOnboardingResponseSerializer,
+        400: OpenApiResponse(StripeErroSerializer, description="Erro retornado pela Stripe."),
+        403: OpenApiResponse(StripeErroSerializer, description="Usuário autenticado não é bartender."),
+        500: OpenApiResponse(StripeErroSerializer, description="Erro inesperado ao criar conta ou link Stripe."),
+    },
+    examples=[
+        OpenApiExample(
+            "Link criado",
+            value={
+                "url": "https://connect.stripe.com/setup/e/acct_123/abc",
+                "tem_conta_stripe": True,
+                "onboarding_completo": False,
+            },
+            response_only=True,
+            status_codes=["200"],
+        )
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def criar_link_onboarding(request):
@@ -138,6 +205,26 @@ def criar_link_onboarding(request):
         )
 
 
+@extend_schema(
+    tags=[TAG_STRIPE_ONBOARDING],
+    summary="Verificar status do onboarding Stripe",
+    description=(
+        "Consulta se o bartender autenticado já tem conta Stripe vinculada e se o onboarding "
+        "está completo para receber pagamentos."
+    ),
+    responses={
+        200: StripeStatusResponseSerializer,
+        403: OpenApiResponse(StripeErroSerializer, description="Usuário autenticado não é bartender."),
+    },
+    examples=[
+        OpenApiExample(
+            "Onboarding completo",
+            value={"tem_conta_stripe": True, "onboarding_completo": True},
+            response_only=True,
+            status_codes=["200"],
+        )
+    ],
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def verificar_status(request):
@@ -160,6 +247,62 @@ def verificar_status(request):
 # PAGAMENTO
 # =========================
 
+@extend_schema(
+    tags=[TAG_STRIPE_PAGAMENTOS],
+    summary="Criar pagamento de um pedido",
+    description=(
+        "Cria ou sincroniza o pagamento Stripe para um pedido aceito. O cliente autenticado "
+        "deve ser o dono do pedido. A resposta retorna o `client_secret` que o frontend usa "
+        "para confirmar o PaymentIntent ou SetupIntent."
+    ),
+    request=None,
+    responses={
+        200: StripePagamentoResponseSerializer,
+        400: OpenApiResponse(StripeErroSerializer, description="Pedido não está apto para pagamento ou erro de validação."),
+        403: OpenApiResponse(StripeErroSerializer, description="Usuário sem permissão para pagar este pedido."),
+        404: OpenApiResponse(StripeErroSerializer, description="Pedido não encontrado."),
+    },
+    examples=[
+        OpenApiExample(
+            "PaymentIntent com captura manual",
+            value={
+                "pagamento_id": 12,
+                "pedido_id": 34,
+                "valor": "350.00",
+                "status": "PENDENTE",
+                "mode": "payment",
+                "finalizado_pelo_cliente": False,
+                "payment_intent_id": "pi_123",
+                "setup_intent_id": None,
+                "stripe_resource_id": "pi_123",
+                "payment_method_id": None,
+                "client_secret": "pi_123_secret_abc",
+                "stripe_status": "requires_payment_method",
+            },
+            response_only=True,
+            status_codes=["200"],
+        ),
+        OpenApiExample(
+            "SetupIntent para pagamento futuro",
+            value={
+                "pagamento_id": 13,
+                "pedido_id": 35,
+                "valor": "500.00",
+                "status": "PENDENTE",
+                "mode": "setup",
+                "finalizado_pelo_cliente": False,
+                "payment_intent_id": None,
+                "setup_intent_id": "seti_123",
+                "stripe_resource_id": "seti_123",
+                "payment_method_id": None,
+                "client_secret": "seti_123_secret_abc",
+                "stripe_status": "requires_payment_method",
+            },
+            response_only=True,
+            status_codes=["200"],
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def pagar_pedido(request, pedido_id):
@@ -181,6 +324,42 @@ def pagar_pedido(request, pedido_id):
         return Response({"erro": str(e)}, status=400)
 
 
+@extend_schema(
+    tags=[TAG_STRIPE_PAGAMENTOS],
+    summary="Confirmar SetupIntent de pagamento futuro",
+    description=(
+        "Sincroniza no backend um pagamento que salvou o método de pagamento via SetupIntent. "
+        "Use após o frontend confirmar o `client_secret` retornado por `pagar_pedido` quando `mode=setup`."
+    ),
+    request=None,
+    responses={
+        200: StripePagamentoResponseSerializer,
+        400: OpenApiResponse(StripeErroSerializer, description="Pagamento não usa SetupIntent ou erro de validação."),
+        403: OpenApiResponse(StripeErroSerializer, description="Usuário sem permissão para confirmar este pagamento."),
+        404: OpenApiResponse(StripeErroSerializer, description="Pagamento não encontrado."),
+    },
+    examples=[
+        OpenApiExample(
+            "Setup confirmado",
+            value={
+                "pagamento_id": 13,
+                "pedido_id": 35,
+                "valor": "500.00",
+                "status": "PENDENTE",
+                "mode": "setup",
+                "finalizado_pelo_cliente": False,
+                "payment_intent_id": None,
+                "setup_intent_id": "seti_123",
+                "stripe_resource_id": "seti_123",
+                "payment_method_id": "pm_123",
+                "client_secret": None,
+                "stripe_status": "succeeded",
+            },
+            response_only=True,
+            status_codes=["200"],
+        )
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def confirmar_setup_pagamento(request, pagamento_id):
@@ -220,6 +399,29 @@ def confirmar_setup_pagamento(request, pagamento_id):
         return Response({"erro": str(e)}, status=400)
 
 
+@extend_schema(
+    tags=[TAG_STRIPE_PAGAMENTOS],
+    summary="Capturar pagamento autorizado",
+    description=(
+        "Libera/captura um PaymentIntent autorizado. Apenas o cliente dono do pedido pode capturar. "
+        "A captura respeita as regras de segurança do serviço, como janela de captura manual."
+    ),
+    request=None,
+    responses={
+        200: StripeStatusMessageSerializer,
+        400: OpenApiResponse(StripeErroSerializer, description="Pagamento ainda não pode ser liberado ou está inválido."),
+        403: OpenApiResponse(StripeErroSerializer, description="Usuário sem permissão para capturar este pagamento."),
+        404: OpenApiResponse(StripeErroSerializer, description="Pagamento não encontrado."),
+    },
+    examples=[
+        OpenApiExample(
+            "Pagamento liberado",
+            value={"status": "Pagamento liberado"},
+            response_only=True,
+            status_codes=["200"],
+        )
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def capturar_pagamento(request, pagamento_id):
@@ -251,6 +453,35 @@ def capturar_pagamento(request, pagamento_id):
         return Response({"erro": str(e)}, status=400)
 
 
+@extend_schema(
+    tags=[TAG_STRIPE_PAGAMENTOS],
+    summary="Finalizar pagamento pelo cliente",
+    description=(
+        "Marca o pagamento como finalizado pelo cliente e captura o PaymentIntent quando aplicável. "
+        "Este endpoint é idempotente: se o pagamento já estiver finalizado, retorna status informativo."
+    ),
+    request=None,
+    responses={
+        200: StripeStatusMessageSerializer,
+        400: OpenApiResponse(StripeErroSerializer, description="Pagamento não foi capturado ou erro de validação."),
+        403: OpenApiResponse(StripeErroSerializer, description="Usuário sem permissão para finalizar este pagamento."),
+        404: OpenApiResponse(StripeErroSerializer, description="Pagamento não encontrado."),
+    },
+    examples=[
+        OpenApiExample(
+            "Pagamento finalizado",
+            value={"status": "Pagamento finalizado pelo cliente"},
+            response_only=True,
+            status_codes=["200"],
+        ),
+        OpenApiExample(
+            "Pagamento já finalizado",
+            value={"status": "Pagamento já finalizado"},
+            response_only=True,
+            status_codes=["200"],
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def finalizar_pagamento(request, pagamento_id):
@@ -310,6 +541,28 @@ def finalizar_pagamento(request, pagamento_id):
 # WEBHOOK (IMPORTANTE)
 # =========================
 
+@extend_schema(
+    tags=[TAG_STRIPE_WEBHOOKS],
+    summary="Receber webhook da Stripe",
+    description=(
+        "Endpoint público chamado pela Stripe. Valida o header `Stripe-Signature` usando "
+        "`STRIPE_WEBHOOK_SECRET` e processa eventos como `payment_intent.succeeded`, "
+        "`payment_intent.payment_failed`, `setup_intent.succeeded` e `setup_intent.canceled`."
+    ),
+    request=None,
+    responses={
+        200: OpenApiResponse(description="Evento recebido e processado."),
+        400: OpenApiResponse(StripeErroSerializer, description="Assinatura inválida ou payload inválido."),
+    },
+    examples=[
+        OpenApiExample(
+            "Assinatura inválida",
+            value={"erro": "Assinatura inválida"},
+            response_only=True,
+            status_codes=["400"],
+        )
+    ],
+)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def webhook_stripe(request):

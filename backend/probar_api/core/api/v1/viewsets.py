@@ -1,17 +1,15 @@
 from rest_framework import viewsets
-from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender, Drink
+from core.models import User, DocumentoLegal, AceiteDocumentoLegal, Cliente, Evento, Bartender, Drink
 from django.db import models
-from .serializers import UserSerializer, TermosSerializer, AceiteTermosSerializer, ClienteSerializer, EventoSerializer, BartenderSerializer, DrinkSerializer
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from .serializers import UserSerializer, DocumentoLegalSerializer, AceiteDocumentoLegalSerializer, ClienteSerializer, EventoSerializer, BartenderSerializer, DrinkSerializer
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample
-from core.enums import PedidoStatus, TipoUsuario
+from core.enums import PedidoStatus, TipoUsuario, TipoDocumentoLegal
 from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao
 from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PedidoCreateSerializer, AvaliacaoSerializer
 from rest_framework import status
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from .permissions import PropostaParticipantPermission
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError
@@ -51,41 +49,83 @@ class UserViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
 
-@extend_schema(tags=["Termos"])
-class TermosViewSet(viewsets.ModelViewSet):
-    queryset = Termos.objects.all()
-    serializer_class = TermosSerializer
+@extend_schema(tags=["Documentos Legais"])
+class DocumentoLegalViewSet(viewsets.ModelViewSet):
+    queryset = DocumentoLegal.objects.all()
+    serializer_class = DocumentoLegalSerializer
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve", "ativos"):
+            return [AllowAny()]
 
-@extend_schema(tags=["Aceite Termos"])
-class AceiteTermosViewSet(viewsets.ModelViewSet):
-    serializer_class = AceiteTermosSerializer
-    permission_classes = [IsAuthenticated]
+        return [IsAdminUser()]
 
     def get_queryset(self):
-        return AceiteTermos.objects.filter(user=self.request.user)
+        queryset = DocumentoLegal.objects.all()
+        tipo = self.request.query_params.get("tipo")
+        tipo_usuario = self.request.query_params.get("tipo_usuario")
+        somente_ativos = self.request.query_params.get("ativos")
 
-    @extend_schema(
-        summary="Aceitar termos",
-        description="Usuário aceita um termo existente (passar `termo_id` no body).",
-        examples=[
-            OpenApiExample(
-                'Exemplo aceite',
-                value={"termo_id": 3},
-                request_only=True,
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+
+        if tipo_usuario:
+            tipo_termos = (
+                TipoDocumentoLegal.TERMOS_BARTENDER
+                if tipo_usuario == TipoUsuario.BARTENDER
+                else TipoDocumentoLegal.TERMOS_CLIENTE
             )
-        ]
-    )
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+            queryset = queryset.filter(
+                tipo__in=[tipo_termos, TipoDocumentoLegal.POLITICA_PRIVACIDADE]
+            )
+
+        if somente_ativos in ("1", "true", "True"):
+            queryset = queryset.filter(esta_ativo=True)
+
+        return queryset
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny])
+    def ativos(self, request):
+        tipo_usuario = request.query_params.get("tipo_usuario")
+        queryset = self.get_queryset().filter(esta_ativo=True)
+
+        if tipo_usuario:
+            tipo_termos = (
+                TipoDocumentoLegal.TERMOS_BARTENDER
+                if tipo_usuario == TipoUsuario.BARTENDER
+                else TipoDocumentoLegal.TERMOS_CLIENTE
+            )
+            queryset = queryset.filter(
+                tipo__in=[tipo_termos, TipoDocumentoLegal.POLITICA_PRIVACIDADE]
+            )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+@extend_schema(tags=["Aceites de Documentos Legais"])
+class AceiteDocumentoLegalViewSet(viewsets.ModelViewSet):
+    serializer_class = AceiteDocumentoLegalSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return AceiteDocumentoLegal.objects.none()
+
+        return AceiteDocumentoLegal.objects.filter(user=self.request.user)
 
 
 @extend_schema(tags=["Clientes"])
 class ClienteViewSet(viewsets.ModelViewSet):
     serializer_class = ClienteSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Cliente.objects.none()
+
         user = self.request.user
 
         if user.is_staff:
@@ -120,6 +160,7 @@ class ClienteViewSet(viewsets.ModelViewSet):
 class BartenderViewSet(viewsets.ModelViewSet):
     serializer_class = BartenderSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
 
     def _base_queryset(self):
         return (
@@ -197,8 +238,12 @@ class BartenderViewSet(viewsets.ModelViewSet):
 class DrinkViewSet(viewsets.ModelViewSet):
     serializer_class = DrinkSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Drink.objects.none()
+
         user = self.request.user
 
         if user.is_staff:
@@ -228,7 +273,12 @@ class DrinkViewSet(viewsets.ModelViewSet):
 class EventoViewSet(viewsets.ModelViewSet):
     serializer_class = EventoSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
+
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Evento.objects.none()
+
         user = self.request.user
         if user.is_staff:
             return Evento.objects.select_related('cliente').all()
@@ -263,8 +313,12 @@ class EventoViewSet(viewsets.ModelViewSet):
 class PedidoViewSet(viewsets.ModelViewSet):
     serializer_class = PedidoSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Pedido.objects.none()
+
         user = self.request.user
         queryset = Pedido.objects.select_related(
             'cliente__user',
@@ -305,8 +359,12 @@ class PedidoViewSet(viewsets.ModelViewSet):
 class PropostaViewSet(viewsets.ModelViewSet):
     serializer_class = PropostaSerializer
     permission_classes = [IsAuthenticated, PropostaParticipantPermission]
+    lookup_value_regex = "[0-9]+"
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Proposta.objects.none()
+
         user = self.request.user
         if user.is_staff:
             return Proposta.objects.select_related('pedido').all()
@@ -412,8 +470,12 @@ class PropostaViewSet(viewsets.ModelViewSet):
 class ChatViewSet(viewsets.ModelViewSet):
     serializer_class = ChatSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Chat.objects.none()
+
         user = self.request.user
         queryset = Chat.objects.select_related(
             'pedido__cliente__user',
@@ -429,8 +491,12 @@ class ChatViewSet(viewsets.ModelViewSet):
 class MensagemViewSet(viewsets.ModelViewSet):
     serializer_class = MensagemSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Mensagem.objects.none()
+
         user = self.request.user
         if user.is_staff:
             return Mensagem.objects.all()
@@ -452,8 +518,12 @@ class MensagemViewSet(viewsets.ModelViewSet):
 class AvaliacaoViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AvaliacaoSerializer
     permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Avaliacao.objects.none()
+
         user = self.request.user
         if user.is_staff:
             return Avaliacao.objects.select_related(

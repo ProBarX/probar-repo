@@ -84,13 +84,45 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Documentação da API oficial do ProBar - Sistema para intermediar clientes e bartenders.',
     'VERSION': '1.0.0',
 
-    'SWAGGER_UI_SETTINGS': {
-        'deepLinking': True,
-        'displayOperationId': False,
-        'defaultModelsExpandDepth': -1,  
-        'defaultModelExpandDepth': 2,
-        'persistAuthorization': True,
-    },
+    'SWAGGER_UI_SETTINGS': """
+    {
+        deepLinking: true,
+        displayOperationId: false,
+        defaultModelsExpandDepth: -1,
+        defaultModelExpandDepth: 2,
+        persistAuthorization: true,
+        tagsSorter: (a, b) => {
+            const order = [
+                "Autenticação",
+                "Autenticação via Google",
+                "Usuários",
+                "Clientes",
+                "Bartenders",
+                "Drinks",
+                "Eventos",
+                "Pedidos",
+                "Pagamentos - Onboarding Stripe",
+                "Pagamentos - Stripe",
+                "Pagamentos - Webhooks Stripe",
+                "Chats",
+                "Propostas",
+                "Mensagens",
+                "Documentos Legais",
+                "Aceites de Documentos Legais",
+            ];
+            const indexA = order.indexOf(a);
+            const indexB = order.indexOf(b);
+            const valueA = indexA === -1 ? order.length : indexA;
+            const valueB = indexB === -1 ? order.length : indexB;
+
+            if (valueA === valueB) {
+                return a.localeCompare(b);
+            }
+
+            return valueA - valueB;
+        },
+    }
+    """,
 
     'SWAGGER_UI_DIST': 'SIDECAR',  
 
@@ -104,11 +136,14 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Drinks'},
         {'name': 'Eventos'},
         {'name': 'Pedidos'},
+        {'name': 'Pagamentos - Onboarding Stripe'},
+        {'name': 'Pagamentos - Stripe'},
+        {'name': 'Pagamentos - Webhooks Stripe'},
         {'name': 'Chats'},
         {'name': 'Propostas'},
         {'name': 'Mensagens'},
-        {'name': 'Termos'},
-        {'name': 'Aceite Termos'},
+        {'name': 'Documentos Legais'},
+        {'name': 'Aceites de Documentos Legais'},
     ],
 }
 

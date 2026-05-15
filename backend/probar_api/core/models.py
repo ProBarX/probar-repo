@@ -6,11 +6,12 @@ from django.utils.translation import gettext_lazy as _
 from .managers import CustomUserManager
 import uuid
 import os
+import hashlib
 from django.core.exceptions import ValidationError
 from core.enums import (
     TipoUsuario,
     Especialidade,
-    TipoTermo,
+    TipoDocumentoLegal,
     StatusEvento,
     PedidoStatus,
     PropostaStatus,
@@ -276,41 +277,66 @@ class Drink(BaseModel):
         return self.nome
 
 
-class Termos(BaseModel):
+class DocumentoLegal(BaseModel):
+    titulo = models.CharField(max_length=120)
     conteudo = models.TextField()
-    versao = models.CharField(max_length=10)
-    tipo = models.CharField(max_length=20, choices=TipoTermo.choices)
+    versao = models.CharField(max_length=20)
+    tipo = models.CharField(max_length=30, choices=TipoDocumentoLegal.choices)
     esta_ativo = models.BooleanField(default=True)
+    vigente_a_partir_de = models.DateTimeField(default=timezone.now)
+    hash_conteudo = models.CharField(max_length=64, editable=False, blank=True)
 
     class Meta:
-        verbose_name = "Termo de Uso"
-        verbose_name_plural = "Termos de Uso"
+        verbose_name = "Documento Legal"
+        verbose_name_plural = "Documentos Legais"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tipo", "versao"],
+                name="unique_documento_legal_tipo_versao",
+            )
+        ]
+        ordering = ["tipo", "-vigente_a_partir_de", "-criado_em"]
 
-    def __str__(self):
-        return f"v{self.versao} - {self.get_tipo_display()}"
-
-
-class AceiteTermos(BaseModel):
-    termo = models.ForeignKey(Termos, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    aceito_em = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "Aceite de Termos"
-        verbose_name_plural = "Aceites de Termos"
-        unique_together = ('termo', 'user')
-
-    def clean(self):
-        if self.termo.tipo != self.user.tipo:
-            raise ValidationError(_("O usuário não pode aceitar termos de uma função diferente da sua."))
+    def atualizar_hash_conteudo(self):
+        self.hash_conteudo = hashlib.sha256(self.conteudo.encode("utf-8")).hexdigest()
 
     def save(self, *args, **kwargs):
-        # Garantir validação antes de salvar
+        self.atualizar_hash_conteudo()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.titulo} v{self.versao}"
+
+
+class AceiteDocumentoLegal(BaseModel):
+    documento = models.ForeignKey(DocumentoLegal, on_delete=models.PROTECT, related_name="aceites")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="aceites_documentos_legais")
+    aceito_em = models.DateTimeField(auto_now_add=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    origem = models.CharField(max_length=30, default="cadastro")
+    hash_conteudo_aceito = models.CharField(max_length=64, editable=False)
+
+    class Meta:
+        verbose_name = "Aceite de Documento Legal"
+        verbose_name_plural = "Aceites de Documentos Legais"
+        unique_together = ("documento", "user")
+        ordering = ["-aceito_em"]
+
+    def clean(self):
+        if self.documento.tipo == TipoDocumentoLegal.TERMOS_CLIENTE and self.user.tipo != TipoUsuario.CLIENTE:
+            raise ValidationError(_("O usuário não pode aceitar termos de cliente."))
+
+        if self.documento.tipo == TipoDocumentoLegal.TERMOS_BARTENDER and self.user.tipo != TipoUsuario.BARTENDER:
+            raise ValidationError(_("O usuário não pode aceitar termos de bartender."))
+
+    def save(self, *args, **kwargs):
+        self.hash_conteudo_aceito = self.documento.hash_conteudo
         self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.user.email} aceitou v{self.termo.versao} ({self.termo.tipo})"
+        return f"{self.user.email} aceitou {self.documento}"
 
 
 class Evento(BaseModel):

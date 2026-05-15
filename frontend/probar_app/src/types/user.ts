@@ -4,6 +4,7 @@ export interface User {
     email: string
     password?: string
     tipo: string
+    documentos_legais_ids?: number[]
     criado_em?: string
 }
 

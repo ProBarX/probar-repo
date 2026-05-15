@@ -12,9 +12,10 @@ class Especialidade(models.TextChoices):
     NIGHT_CLUB = 'night_club', 'Night Club'
 
 
-class TipoTermo(models.TextChoices):
-    CLIENTE = 'cliente', 'Termos para Clientes'
-    BARTENDER = 'bartender', 'Termos para Bartenders'
+class TipoDocumentoLegal(models.TextChoices):
+    TERMOS_CLIENTE = 'termos_cliente', 'Termos de Uso para Clientes'
+    TERMOS_BARTENDER = 'termos_bartender', 'Termos de Uso para Bartenders'
+    POLITICA_PRIVACIDADE = 'politica_privacidade', 'Política de Privacidade'
 
 
 class StatusEvento(models.TextChoices):

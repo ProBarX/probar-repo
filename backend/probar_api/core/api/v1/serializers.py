@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import User, Termos, AceiteTermos, Cliente, Evento, Bartender, Drink
+from core.models import User, DocumentoLegal, AceiteDocumentoLegal, Cliente, Evento, Bartender, Drink
 from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao
 from core.enums import PropostaStatus
 from django.utils.translation import gettext_lazy as _
@@ -7,13 +7,39 @@ from decimal import Decimal
 from drf_spectacular.utils import extend_schema_field, OpenApiTypes
 from django.db import transaction
 from django.core.exceptions import ObjectDoesNotExist
-from core.enums import PropostaTipo, PropostaStatus, TipoUsuario
+from core.enums import PropostaTipo, PropostaStatus, TipoUsuario, TipoDocumentoLegal
 from decimal import Decimal
 
+
+def get_client_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+
+    return request.META.get("REMOTE_ADDR")
+
+
+def documentos_obrigatorios_para_tipo(tipo_usuario):
+    tipo_termos = (
+        TipoDocumentoLegal.TERMOS_BARTENDER
+        if tipo_usuario == TipoUsuario.BARTENDER
+        else TipoDocumentoLegal.TERMOS_CLIENTE
+    )
+
+    return DocumentoLegal.objects.filter(
+        esta_ativo=True,
+        tipo__in=[tipo_termos, TipoDocumentoLegal.POLITICA_PRIVACIDADE],
+    )
 
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    documentos_legais_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        allow_empty=False,
+    )
 
     class Meta:
         model = User
@@ -23,15 +49,67 @@ class UserSerializer(serializers.ModelSerializer):
             "password",
             "name",
             "tipo",
-            "criado_em"
+            "criado_em",
+            "documentos_legais_ids",
         ]
+
+    def validate(self, data):
+        documentos_ids = data.get("documentos_legais_ids")
+        tipo = data.get("tipo", TipoUsuario.CLIENTE)
+
+        if documentos_ids is None:
+            if self.context.get("request"):
+                raise serializers.ValidationError(
+                    "É necessário aceitar os documentos legais vigentes para criar a conta."
+                )
+            return data
+
+        obrigatorios = list(documentos_obrigatorios_para_tipo(tipo))
+        obrigatorios_ids = {documento.id for documento in obrigatorios}
+
+        if len(obrigatorios_ids) < 2:
+            raise serializers.ValidationError(
+                "Documentos legais obrigatórios não estão configurados."
+            )
+
+        documentos_informados = set(documentos_ids)
+        faltantes = obrigatorios_ids - documentos_informados
+
+        if faltantes:
+            raise serializers.ValidationError(
+                "É necessário aceitar os termos de uso aplicáveis e a política de privacidade vigentes."
+            )
+
+        documentos_validos = set(
+            DocumentoLegal.objects.filter(id__in=documentos_informados, esta_ativo=True).values_list("id", flat=True)
+        )
+
+        if documentos_informados - documentos_validos:
+            raise serializers.ValidationError("Documento legal inválido ou inativo.")
+
+        data["documentos_legais"] = obrigatorios
+        return data
 
     def create(self, validated_data):
         password = validated_data.pop("password")
+        documentos_legais_ids = validated_data.pop("documentos_legais_ids", None)
+        documentos_legais = validated_data.pop("documentos_legais", [])
+        request = self.context.get("request")
 
-        user = User(**validated_data)
-        user.set_password(password)
-        user.save()
+        with transaction.atomic():
+            user = User(**validated_data)
+            user.set_password(password)
+            user.save()
+
+            if documentos_legais_ids is not None:
+                for documento in documentos_legais:
+                    AceiteDocumentoLegal.objects.create(
+                        user=user,
+                        documento=documento,
+                        origem="cadastro",
+                        ip=get_client_ip(request) if request else None,
+                        user_agent=request.META.get("HTTP_USER_AGENT", "") if request else "",
+                    )
 
         return user
 
@@ -48,62 +126,81 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
     
 
-class TermosSerializer(serializers.ModelSerializer):
+class DocumentoLegalSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Termos
+        model = DocumentoLegal
         fields = [
             "id",
+            "titulo",
             "conteudo",
             "versao",
             "tipo",
             "esta_ativo",
+            "vigente_a_partir_de",
+            "hash_conteudo",
             "criado_em",
-            "atualizado_em"
+            "atualizado_em",
         ]
-    
+        read_only_fields = ["hash_conteudo"]
 
-class AceiteTermosSerializer(serializers.ModelSerializer):
-    termo_id = serializers.IntegerField(write_only=True)
+
+class AceiteDocumentoLegalSerializer(serializers.ModelSerializer):
+    documento_id = serializers.IntegerField(write_only=True)
 
     class Meta:
-        model = AceiteTermos
+        model = AceiteDocumentoLegal
         fields = [
             "id",
-            "termo_id",
-            "termo",
+            "documento_id",
+            "documento",
             "user",
-            "aceito_em"
+            "aceito_em",
+            "ip",
+            "user_agent",
+            "origem",
+            "hash_conteudo_aceito",
         ]
-        read_only_fields = ["termo", "user", "aceito_em"]
+        read_only_fields = [
+            "documento",
+            "user",
+            "aceito_em",
+            "ip",
+            "user_agent",
+            "origem",
+            "hash_conteudo_aceito",
+        ]
 
     def validate(self, data):
-        user = self.context['request'].user
+        user = self.context["request"].user
 
         try:
-            termo = Termos.objects.get(id=data["termo_id"])
-        except Termos.DoesNotExist:
-            raise serializers.ValidationError("Termo não encontrado.")
+            documento = DocumentoLegal.objects.get(id=data["documento_id"], esta_ativo=True)
+        except DocumentoLegal.DoesNotExist:
+            raise serializers.ValidationError("Documento legal não encontrado ou inativo.")
 
-        # valida perfil do termo com perfil do usuário
-        if termo.tipo != user.tipo:
+        if documento.tipo == TipoDocumentoLegal.TERMOS_CLIENTE and user.tipo != TipoUsuario.CLIENTE:
             raise serializers.ValidationError("Termo inválido para este usuário.")
 
-        # salva para usar no create
-        data["termo"] = termo
+        if documento.tipo == TipoDocumentoLegal.TERMOS_BARTENDER and user.tipo != TipoUsuario.BARTENDER:
+            raise serializers.ValidationError("Termo inválido para este usuário.")
+
+        data["documento"] = documento
         return data
-    
+
     def create(self, validated_data):
-        """Garante que o usuário não aceite o mesmo termo mais de uma vez"""
-        user = self.context['request'].user
-        termo = validated_data["termo"]
+        request = self.context["request"]
+        user = request.user
+        documento = validated_data["documento"]
 
-        # garante que o usuário não aceite o mesmo termo mais de uma vez
-        if AceiteTermos.objects.filter(user=user, termo=termo).exists():
-            raise serializers.ValidationError("Termo já aceito por este usuário.")
+        if AceiteDocumentoLegal.objects.filter(user=user, documento=documento).exists():
+            raise serializers.ValidationError("Documento legal já aceito por este usuário.")
 
-        return AceiteTermos.objects.create(
+        return AceiteDocumentoLegal.objects.create(
             user=user,
-            termo=termo
+            documento=documento,
+            origem="perfil",
+            ip=get_client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
         )
 
 
@@ -362,18 +459,22 @@ class PedidoSerializer(serializers.ModelSerializer):
         except ObjectDoesNotExist:
             return None
 
+    @extend_schema_field(OpenApiTypes.INT)
     def get_pagamento_id(self, obj):
         pagamento = self._get_pagamento(obj)
         return pagamento.id if pagamento else None
 
+    @extend_schema_field(OpenApiTypes.STR)
     def get_pagamento_status(self, obj):
         pagamento = self._get_pagamento(obj)
         return pagamento.status if pagamento else None
 
+    @extend_schema_field(OpenApiTypes.NUMBER)
     def get_pagamento_valor(self, obj):
         pagamento = self._get_pagamento(obj)
         return str(pagamento.valor) if pagamento else None
 
+    @extend_schema_field(OpenApiTypes.BOOL)
     def get_pagamento_finalizado_pelo_cliente(self, obj):
         pagamento = self._get_pagamento(obj)
         return pagamento.finalizado_pelo_cliente if pagamento else False

@@ -1,27 +1,36 @@
+import Image from "next/image"
+
 export function BannerPromo() {
   return (
-    <div style={{
-      backgroundColor: "#1a1a1a",
-      borderRadius: "12px",
-      padding: "24px",
-      marginBottom: "24px",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      <span style={{
-        backgroundColor: "#e53e3e",
-        color: "#fff",
-        padding: "4px 10px",
-        borderRadius: "6px",
-        fontSize: "12px",
-        fontWeight: "bold",
-      }}>
-        Promo
-      </span>
-      <h2 style={{ color: "#F5C518", fontSize: "28px", margin: "8px 0 4px" }}>
-        10% de desconto
-      </h2>
-      <p style={{ color: "#fff" }}>Na sua primeira contratação</p>
+    <div className="banner-promo">
+      <Image
+        src="/promo-banner1824x254.png"
+        alt="Promoção ProBar"
+        width={2784}
+        height={384}
+        priority
+        sizes="(max-width: 768px) 100vw, 920px"
+        style={{
+          display: "block",
+          width: "100%",
+          height: "auto",
+        }}
+      />
+      <style jsx>{`
+        .banner-promo {
+          background-color: #1a1a1a;
+          border-radius: 12px;
+          margin-bottom: 24px;
+          overflow: hidden;
+          width: 100%;
+        }
+
+        @media (max-width: 640px) {
+          .banner-promo {
+            display: none;
+          }
+        }
+      `}</style>
     </div>
   )
 }

@@ -10,8 +10,30 @@ import requests as _requests
 from drf_spectacular.utils import extend_schema
 from core.api.v1.auth_serializers import GoogleAuthSerializer
 from core.services.google_auth import verify_google_id_token
-from core.models import Cliente, Bartender
+from core.models import Cliente, Bartender, DocumentoLegal, AceiteDocumentoLegal
+from core.enums import TipoDocumentoLegal, TipoUsuario
 from core.api.v1.auth_serializers import GoogleVerifySerializer
+
+
+def get_client_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+
+    return request.META.get("REMOTE_ADDR")
+
+
+def documentos_obrigatorios_para_tipo(tipo_usuario):
+    tipo_termos = (
+        TipoDocumentoLegal.TERMOS_BARTENDER
+        if tipo_usuario == TipoUsuario.BARTENDER
+        else TipoDocumentoLegal.TERMOS_CLIENTE
+    )
+
+    return DocumentoLegal.objects.filter(
+        esta_ativo=True,
+        tipo__in=[tipo_termos, TipoDocumentoLegal.POLITICA_PRIVACIDADE],
+    )
 
 @extend_schema(tags=["Autenticação via Google"], request=GoogleAuthSerializer, responses={200: None})
 class GoogleAuthView(APIView):
@@ -31,6 +53,7 @@ class GoogleAuthView(APIView):
 
         id_token_str = data['id_token']
         tipo_usuario = data.get('tipo_usuario', None)
+        documentos_legais_ids = request.data.get('documentos_legais_ids')
 
         try:
             info = verify_google_id_token(id_token_str)
@@ -52,9 +75,33 @@ class GoogleAuthView(APIView):
             if not tipo_usuario:
                 return Response({'detail': 'tipo_required'}, status=status.HTTP_400_BAD_REQUEST)
             # cria usuário sem senha (provedor externo)
+            obrigatorios = list(documentos_obrigatorios_para_tipo(tipo_usuario))
+            obrigatorios_ids = {documento.id for documento in obrigatorios}
+            documentos_informados = set(documentos_legais_ids or [])
+
+            if len(obrigatorios_ids) < 2:
+                return Response(
+                    {'detail': 'Documentos legais obrigatórios não estão configurados.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if obrigatorios_ids - documentos_informados:
+                return Response(
+                    {'detail': 'É necessário aceitar os termos de uso aplicáveis e a política de privacidade vigentes.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             user = User(email=email, name=name or '', tipo=tipo_usuario)
             user.set_unusable_password()
             user.save()
+            for documento in obrigatorios:
+                AceiteDocumentoLegal.objects.create(
+                    user=user,
+                    documento=documento,
+                    origem="cadastro_google",
+                    ip=get_client_ip(request),
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                )
             created = True
         else:
             # atualiza nome se vazio
