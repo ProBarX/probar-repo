@@ -1,11 +1,38 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { CSSProperties } from "react"
 import { ArrowLeft, Award, ChevronLeft, ChevronRight, Clock, Minus, Plus, Star, Wine } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { formatCurrency, formatExperience, formatSpecialty } from "@/lib/bartender-format"
 import { resolveMediaUrl } from "@/lib/media-url"
+import { api } from "@/services/api"
+
+type Avaliacao = {
+  id: number
+  nota: number
+  comentario: string
+  tags: string[]
+  cliente_nome: string
+  evento_nome: string
+  criado_em: string
+}
+
+const reviewCarouselViewportStyle: CSSProperties = {
+  overflow: "hidden",
+  borderRadius: "10px",
+}
+
+const reviewCarouselTrackStyle: CSSProperties = {
+  display: "flex",
+  transition: "transform 280ms ease",
+  willChange: "transform",
+}
+
+const reviewSlideStyle: CSSProperties = {
+  minWidth: "100%",
+  boxSizing: "border-box",
+}
 
 export type BartenderDetail = {
   user_id: number
@@ -37,7 +64,19 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
   const [drinkIndex, setDrinkIndex] = useState(0)
   const [expanded, setExpanded] = useState(false)
   const [failedDrinkImages, setFailedDrinkImages] = useState<Set<number>>(() => new Set())
+  const [reviews, setReviews] = useState<Avaliacao[]>([])
+  const [reviewsLoading, setReviewsLoading] = useState(true)
+  const [reviewIndex, setReviewIndex] = useState(0)
   const router = useRouter()
+
+  useEffect(() => {
+    api.get<Avaliacao[] | { results: Avaliacao[] }>(`/avaliacoes/?bartender_id=${bartender.user_id}`)
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : data.results
+        setReviews(list.slice(0, 5))
+      })
+      .finally(() => setReviewsLoading(false))
+  }, [bartender.user_id])
 
   const drinks = bartender.drinks ?? []
   const profileImage = resolveMediaUrl(bartender.foto_perfil) ?? PLACEHOLDER_IMAGE
@@ -210,6 +249,136 @@ export function BartenderDetailView({ bartender, onBack }: Props) {
             <div style={emptyDrinkStyle}>
               <Wine size={34} color="#9CA3AF" />
               <span>Nenhum drink cadastrado ainda.</span>
+            </div>
+          )}
+        </section>
+
+        {/* Avaliações */}
+        <section style={panelStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Avaliações</h2>
+              <p style={sectionSubtitleStyle}>
+                {bartender.total_avaliacoes > 0
+                  ? `${bartender.total_avaliacoes} avaliação${bartender.total_avaliacoes > 1 ? "ões" : ""}`
+                  : "Ainda sem avaliações"}
+              </p>
+            </div>
+            {bartender.media_avaliacoes > 0 && (
+              <div style={reviewSummaryStyle}>
+                <strong style={{ fontSize: "28px", fontWeight: 800, color: "#111827", lineHeight: 1 }}>
+                  {bartender.media_avaliacoes.toFixed(1).replace(".", ",")}
+                </strong>
+                <div style={{ display: "flex", gap: "3px" }}>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star
+                      key={s}
+                      size={14}
+                      fill={s <= Math.round(bartender.media_avaliacoes) ? "#F5C518" : "none"}
+                      color={s <= Math.round(bartender.media_avaliacoes) ? "#F5C518" : "#D1D5DB"}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {reviewsLoading && (
+            <p style={{ color: "#9CA3AF", fontSize: "13px", margin: "12px 0 0" }}>Carregando avaliações...</p>
+          )}
+
+          {!reviewsLoading && reviews.length === 0 && (
+            <div style={emptyReviewsStyle}>
+              <Star size={28} color="#D1D5DB" />
+              <span>Nenhuma avaliação ainda. Seja o primeiro!</span>
+            </div>
+          )}
+
+          {!reviewsLoading && reviews.length > 0 && (
+            <div style={{ marginTop: "16px" }}>
+              {/* Viewport do carrossel */}
+              <div style={reviewCarouselViewportStyle}>
+                <div style={{ ...reviewCarouselTrackStyle, transform: `translateX(-${reviewIndex * 100}%)` }}>
+                  {reviews.map((review) => (
+                    <div key={review.id} style={reviewSlideStyle}>
+                      <div style={reviewCardStyle}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: "14px", color: "#111827" }}>
+                              {review.cliente_nome.split(" ")[0]}
+                            </p>
+                            <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#9CA3AF" }}>
+                              {review.evento_nome} · {new Date(review.criado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}
+                            </p>
+                          </div>
+                          <div style={{ display: "flex", gap: "3px" }}>
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <Star
+                                key={s}
+                                size={13}
+                                fill={s <= review.nota ? "#F5C518" : "none"}
+                                color={s <= review.nota ? "#F5C518" : "#D1D5DB"}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {review.tags.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                            {review.tags.map((tag) => (
+                              <span key={tag} style={reviewTagStyle}>{tag}</span>
+                            ))}
+                          </div>
+                        )}
+
+                        {review.comentario.trim() && (
+                          <p style={{ margin: "10px 0 0", fontSize: "13px", color: "#4B5563", lineHeight: 1.6 }}>
+                            "{review.comentario.trim()}"
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Navegação: botões + dots */}
+              {reviews.length > 1 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "14px" }}>
+                  <button
+                    onClick={() => setReviewIndex((i) => Math.max(0, i - 1))}
+                    disabled={reviewIndex === 0}
+                    style={{ ...navButtonStyle, opacity: reviewIndex === 0 ? 0.35 : 1 }}
+                    aria-label="Avaliação anterior"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <div style={{ display: "flex", gap: "7px", alignItems: "center" }}>
+                    {reviews.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setReviewIndex(i)}
+                        style={{
+                          ...drinkDotStyle,
+                          width: i === reviewIndex ? "22px" : "8px",
+                          backgroundColor: i === reviewIndex ? "#F5C518" : "#D1D5DB",
+                        }}
+                        aria-label={`Avaliação ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setReviewIndex((i) => Math.min(reviews.length - 1, i + 1))}
+                    disabled={reviewIndex === reviews.length - 1}
+                    style={{ ...navButtonStyle, opacity: reviewIndex === reviews.length - 1 ? 0.35 : 1 }}
+                    aria-label="Próxima avaliação"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -644,4 +813,44 @@ const primaryButtonStyle: CSSProperties = {
   fontSize: "15px",
   fontWeight: 800,
   cursor: "pointer",
+}
+
+const reviewSummaryStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "6px",
+}
+
+const reviewCardStyle: CSSProperties = {
+  padding: "14px 16px",
+  border: "1px solid #F0F0F0",
+  borderRadius: "10px",
+  backgroundColor: "#FAFAFA",
+}
+
+const reviewTagStyle: CSSProperties = {
+  display: "inline-flex",
+  border: "1px solid #F5C518",
+  borderRadius: "999px",
+  padding: "3px 10px",
+  fontSize: "11px",
+  fontWeight: 700,
+  color: "#8A6D00",
+  backgroundColor: "#FFF8D6",
+  letterSpacing: "0.3px",
+}
+
+const emptyReviewsStyle: CSSProperties = {
+  marginTop: "16px",
+  minHeight: "100px",
+  border: "1px dashed #D1D5DB",
+  borderRadius: "10px",
+  color: "#9CA3AF",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "8px",
+  fontSize: "13px",
 }

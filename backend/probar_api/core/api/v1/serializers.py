@@ -438,6 +438,7 @@ class PedidoSerializer(serializers.ModelSerializer):
     pagamento_status = serializers.SerializerMethodField()
     pagamento_valor = serializers.SerializerMethodField()
     pagamento_finalizado_pelo_cliente = serializers.SerializerMethodField()
+    tem_avaliacao = serializers.SerializerMethodField()
 
     class Meta:
         model = Pedido
@@ -450,7 +451,7 @@ class PedidoSerializer(serializers.ModelSerializer):
             'status', 'criado_em', 'propostas',
             'proposta_aprovada', 'valor_hora_aprovado', 'horas_aprovadas',
             'valor_total_aprovado', 'pagamento_id', 'pagamento_status',
-            'pagamento_valor', 'pagamento_finalizado_pelo_cliente',
+            'pagamento_valor', 'pagamento_finalizado_pelo_cliente', 'tem_avaliacao',
         ]
 
     def _get_pagamento(self, obj):
@@ -478,6 +479,10 @@ class PedidoSerializer(serializers.ModelSerializer):
     def get_pagamento_finalizado_pelo_cliente(self, obj):
         pagamento = self._get_pagamento(obj)
         return pagamento.finalizado_pelo_cliente if pagamento else False
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_tem_avaliacao(self, obj):
+        return hasattr(obj, 'avaliacao')
 
 
 class PedidoCreateSerializer(serializers.Serializer):
@@ -571,9 +576,15 @@ class ChatSerializer(serializers.ModelSerializer):
 class AvaliacaoSerializer(serializers.ModelSerializer):
     cliente_nome = serializers.CharField(source='pedido.cliente.user.name', read_only=True)
     evento_nome = serializers.CharField(source='pedido.evento.nome', read_only=True)
+    bartender_nome = serializers.CharField(source='pedido.bartender.user.name', read_only=True)
     pedido_id = serializers.IntegerField(source='pedido.id', read_only=True)
+    pedido = serializers.PrimaryKeyRelatedField(queryset=Pedido.objects.all(), write_only=True)
+    tags = serializers.ListField(child=serializers.CharField(max_length=50), required=False, default=list)
 
     class Meta:
         model = Avaliacao
-        fields = ['id', 'pedido_id', 'nota', 'comentario', 'cliente_nome', 'evento_nome', 'criado_em']
+        fields = [
+            'id', 'pedido', 'pedido_id', 'nota', 'comentario', 'tags',
+            'cliente_nome', 'evento_nome', 'bartender_nome', 'criado_em',
+        ]
         read_only_fields = ['id', 'criado_em']

@@ -515,23 +515,53 @@ class MensagemViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema(tags=["Avaliações"])
-class AvaliacaoViewSet(viewsets.ReadOnlyModelViewSet):
+class AvaliacaoViewSet(viewsets.ModelViewSet):
     serializer_class = AvaliacaoSerializer
     permission_classes = [IsAuthenticated]
     lookup_value_regex = "[0-9]+"
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return Avaliacao.objects.none()
 
         user = self.request.user
-        if user.is_staff:
-            return Avaliacao.objects.select_related(
-                'pedido__cliente__user', 'pedido__bartender__user', 'pedido__evento'
-            ).all()
-        return Avaliacao.objects.select_related(
+        qs = Avaliacao.objects.select_related(
             'pedido__cliente__user', 'pedido__bartender__user', 'pedido__evento'
-        ).filter(
-            pedido__bartender__user=user,
-            pedido__status=PedidoStatus.CONCLUIDO,
+        )
+
+        if user.is_staff:
+            return qs.all()
+
+        bartender_id = self.request.query_params.get('bartender_id')
+        if bartender_id:
+            return qs.filter(
+                pedido__bartender__user_id=bartender_id,
+                pedido__status=PedidoStatus.CONCLUIDO,
+            ).order_by('-criado_em')
+
+        if hasattr(user, 'bartender'):
+            return qs.filter(
+                pedido__bartender__user=user,
+                pedido__status=PedidoStatus.CONCLUIDO,
+            ).order_by('-criado_em')
+
+        return qs.filter(
+            pedido__cliente__user=user,
         ).order_by('-criado_em')
+
+    def perform_create(self, serializer):
+        from rest_framework.exceptions import PermissionDenied, ValidationError
+        user = self.request.user
+        pedido = serializer.validated_data['pedido']
+
+        if pedido.cliente.user != user:
+            raise PermissionDenied("Você não tem permissão para avaliar este pedido.")
+
+        if pedido.status != PedidoStatus.CONCLUIDO:
+            raise ValidationError({"pedido": "O pedido precisa estar concluído para ser avaliado."})
+
+        if hasattr(pedido, 'avaliacao'):
+            raise ValidationError({"pedido": "Este pedido já foi avaliado."})
+
+        serializer.save()
