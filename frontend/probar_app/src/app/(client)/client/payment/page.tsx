@@ -4,11 +4,12 @@ import { Suspense, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js"
 import { loadStripe } from "@stripe/stripe-js"
-import { AlertCircle, ArrowLeft, CheckCircle2, CreditCard, Loader2, ShieldCheck } from "lucide-react"
+import { AlertCircle, ArrowLeft, CheckCircle2, CreditCard, Loader2, ShieldCheck, UserCheck, UserX } from "lucide-react"
 import {
   confirmarSetupPagamento,
   criarPagamento,
-  finalizarPagamento,
+  confirmarPresencaPedido,
+  registrarAusenciaPedido,
   type PaymentSession,
 } from "@/services/payment"
 
@@ -75,6 +76,7 @@ function PaymentRoute() {
   const [error, setError] = useState<string | null>(null)
   const [confirmedStatus, setConfirmedStatus] = useState<string | null>(null)
   const [finalizing, setFinalizing] = useState(false)
+  const [registeringAbsence, setRegisteringAbsence] = useState(false)
   const [finalizeError, setFinalizeError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -114,47 +116,81 @@ function PaymentRoute() {
   const isPaymentAuthorized = Boolean(
     !isSetupSession && !isPaymentPaid && isCapturablePaymentStatus(stripeStatus)
   )
+  const isAbsenceRegistered = session?.presenca_status === "AUSENTE"
   const isConfirmed = hasSavedCard || isPaymentPaid
   const stripeElementsSession =
     hasStripeClientSecret(session) && !isConfirmed && !isPaymentAuthorized ? session : null
   const needsStripeElements = Boolean(stripeElementsSession)
-  const hasUnavailableSession = Boolean(session && !stripeElementsSession && !isConfirmed && !isPaymentAuthorized)
-  const statusLabel = session
-    ? hasSavedCard
-      ? "Cartao salvo"
-      : isPaymentPaid
-        ? "Pago"
-        : isPaymentAuthorized
-          ? "Aguardando finalizacao"
-          : session.status
-    : "-"
+  const hasUnavailableSession = Boolean(session && !stripeElementsSession && !isConfirmed && !isPaymentAuthorized && !isAbsenceRegistered)
+  const statusLabel = (() => {
+    if (!session) return "-"
+    if (isAbsenceRegistered) return "Ausencia registrada"
+    if (session.presenca_status === "PRESENTE" && !isPaymentPaid) return "Presenca confirmada"
+    if (hasSavedCard) return "Cartao salvo"
+    if (isPaymentPaid) return "Pagamento liberado"
+    if (isPaymentAuthorized) return "Pagamento autorizado"
+    if (session.status === "PENDENTE") return "Aguardando pagamento"
+    return session.status
+  })()
+  const pedidoDisplayNumber = session?.pedido_numero_bartender ?? "-"
   const missingPedido = !pedidoId
 
-  async function handleFinalizePayment() {
+  async function handleConfirmPresence() {
     if (!session || finalizing) return
 
     setFinalizing(true)
     setFinalizeError(null)
 
     try {
-      await finalizarPagamento(session.pagamento_id)
-      setConfirmedStatus("succeeded")
+      const updated = await confirmarPresencaPedido(session.pedido_id)
+      if (updated.pagamento_status === "PAGO") {
+        setConfirmedStatus("succeeded")
+      }
       setSession((current) =>
         current
           ? {
               ...current,
-              status: "PAGO",
-              stripe_status: "succeeded",
-              finalizado_pelo_cliente: true,
+              status: updated.pagamento_status ?? current.status,
+              stripe_status: updated.pagamento_status === "PAGO" ? "succeeded" : current.stripe_status,
+              presenca_status: updated.presenca_status,
+              presenca_origem: updated.presenca_origem,
+              finalizado_pelo_cliente: updated.pagamento_status === "PAGO" || current.finalizado_pelo_cliente,
             }
           : current
       )
     } catch (err) {
       setFinalizeError(
-        getErrorMessage(err, "Nao foi possivel finalizar o pagamento.")
+        getErrorMessage(err, "Nao foi possivel confirmar a presenca.")
       )
     } finally {
       setFinalizing(false)
+    }
+  }
+
+  async function handleRegisterAbsence() {
+    if (!session || registeringAbsence) return
+
+    setRegisteringAbsence(true)
+    setFinalizeError(null)
+
+    try {
+      const updated = await registrarAusenciaPedido(session.pedido_id)
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              presenca_status: updated.presenca_status,
+              presenca_origem: updated.presenca_origem,
+              status: updated.pagamento_status ?? current.status,
+            }
+          : current
+      )
+    } catch (err) {
+      setFinalizeError(
+        getErrorMessage(err, "Nao foi possivel registrar a ausencia.")
+      )
+    } finally {
+      setRegisteringAbsence(false)
     }
   }
 
@@ -241,24 +277,36 @@ function PaymentRoute() {
           {!missingPedido && !loading && !error && session && isConfirmed && (
             <PaymentNotice
               tone="success"
-              title={isSetupSession ? "Cartao salvo" : "Pagamento finalizado"}
+              title={isSetupSession ? "Cartao salvo" : "Pagamento liberado"}
               message={
                 isSetupSession
                   ? "O cartao foi salvo e a cobranca sera autorizada perto da data do evento."
-                  : "O pagamento foi capturado e o pedido foi marcado como pago."
+                  : "O pagamento foi capturado e liberado para o pedido."
               }
               actionLabel="Voltar ao chat"
               onAction={() => router.push("/client/chat")}
             />
           )}
 
-          {!missingPedido && !loading && !error && session && isPaymentAuthorized && (
-            <FinalizePaymentPanel
+          {!missingPedido && !loading && !error && session && isAbsenceRegistered && (
+            <PaymentNotice
+              tone="success"
+              title="Ausencia registrada"
+              message="O pagamento nao sera liberado automaticamente. A proxima etapa do fluxo financeiro deve tratar o estorno ou reembolso."
+              actionLabel="Voltar ao chat"
+              onAction={() => router.push("/client/chat")}
+            />
+          )}
+
+          {!missingPedido && !loading && !error && session && isPaymentAuthorized && !isAbsenceRegistered && (
+            <PresenceReleasePanel
               session={session}
               error={finalizeError}
               finalizing={finalizing}
+              registeringAbsence={registeringAbsence}
               onBack={() => router.push("/client/chat")}
-              onFinalize={handleFinalizePayment}
+              onConfirmPresence={handleConfirmPresence}
+              onRegisterAbsence={handleRegisterAbsence}
             />
           )}
 
@@ -318,7 +366,7 @@ function PaymentRoute() {
             <div style={{ minWidth: 0 }}>
               <p style={{ margin: 0, color: "#6B7280", fontSize: 13 }}>Pedido</p>
               <h1 style={{ margin: 0, color: "#111827", fontSize: 22, fontWeight: 750 }}>
-                #{pedidoId ?? "-"}
+                #{pedidoDisplayNumber}
               </h1>
             </div>
           </div>
@@ -358,19 +406,25 @@ function PaymentRoute() {
   )
 }
 
-function FinalizePaymentPanel({
+function PresenceReleasePanel({
   session,
   error,
   finalizing,
+  registeringAbsence,
   onBack,
-  onFinalize,
+  onConfirmPresence,
+  onRegisterAbsence,
 }: {
   session: PaymentSession
   error: string | null
   finalizing: boolean
+  registeringAbsence: boolean
   onBack: () => void
-  onFinalize: () => void
+  onConfirmPresence: () => void
+  onRegisterAbsence: () => void
 }) {
+  const isSubmitting = finalizing || registeringAbsence
+
   return (
     <div
       style={{
@@ -402,7 +456,10 @@ function FinalizePaymentPanel({
           Pagamento autorizado
         </h2>
         <p style={{ margin: 0, color: "#4B5563", maxWidth: 440, lineHeight: 1.5 }}>
-          O valor de {formatCurrency(session.valor)} esta reservado no cartao. Finalize para capturar a cobranca e marcar o pedido como pago.
+          O valor de {formatCurrency(session.valor)} esta reservado no cartao. Confirme a presenca para liberar o pagamento ou registre ausencia para bloquear o repasse.
+        </p>
+        <p style={{ margin: 0, color: "#6B7280", maxWidth: 440, fontSize: 13, lineHeight: 1.45 }}>
+          Liberacao automatica: {new Date(session.liberacao_automatica_em).toLocaleString("pt-BR")}
         </p>
       </div>
 
@@ -439,8 +496,8 @@ function FinalizePaymentPanel({
       >
         <button
           type="button"
-          onClick={onFinalize}
-          disabled={finalizing}
+          onClick={onConfirmPresence}
+          disabled={isSubmitting}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -449,28 +506,51 @@ function FinalizePaymentPanel({
             minHeight: 42,
             border: "none",
             borderRadius: 8,
-            background: finalizing ? "#D1D5DB" : "#F5C518",
+            background: isSubmitting ? "#D1D5DB" : "#F5C518",
             color: "#111827",
-            cursor: finalizing ? "wait" : "pointer",
+            cursor: isSubmitting ? "wait" : "pointer",
             fontWeight: 750,
             padding: "0 14px",
           }}
         >
-          {finalizing ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}
-          {finalizing ? "Finalizando..." : "Finalizar pagamento"}
+          {finalizing ? <Loader2 size={17} className="animate-spin" /> : <UserCheck size={17} />}
+          {finalizing ? "Confirmando..." : "Bartender compareceu"}
+        </button>
+
+        <button
+          type="button"
+          onClick={onRegisterAbsence}
+          disabled={isSubmitting}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            minHeight: 42,
+            border: "1px solid #FECACA",
+            borderRadius: 8,
+            background: "#fff",
+            color: "#991B1B",
+            cursor: isSubmitting ? "wait" : "pointer",
+            fontWeight: 750,
+            padding: "0 14px",
+          }}
+        >
+          {registeringAbsence ? <Loader2 size={17} className="animate-spin" /> : <UserX size={17} />}
+          {registeringAbsence ? "Registrando..." : "Nao compareceu"}
         </button>
 
         <button
           type="button"
           onClick={onBack}
-          disabled={finalizing}
+          disabled={isSubmitting}
           style={{
             minHeight: 42,
             border: "1px solid #D1D5DB",
             borderRadius: 8,
             background: "#fff",
             color: "#111827",
-            cursor: finalizing ? "not-allowed" : "pointer",
+            cursor: isSubmitting ? "not-allowed" : "pointer",
             fontWeight: 700,
             padding: "0 14px",
           }}

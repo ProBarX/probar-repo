@@ -8,12 +8,13 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample
 from core.enums import PedidoStatus, TipoUsuario, TipoDocumentoLegal
 from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao
-from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PedidoCreateSerializer, AvaliacaoSerializer
+from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PresencaPedidoRequestSerializer, PedidoCreateSerializer, AvaliacaoSerializer
 from rest_framework import status
 from .permissions import PropostaParticipantPermission
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError
 from django.db.models.functions import Coalesce
+from core.services import stripe_service
 
 @extend_schema(tags=["Usuários"])
 class UserViewSet(viewsets.ModelViewSet):
@@ -355,6 +356,57 @@ class PedidoViewSet(viewsets.ModelViewSet):
         return Response(PedidoSerializer(pedido, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
+    @extend_schema(
+        summary="Confirmar presenca do bartender",
+        description="Cliente dono do pedido confirma que o bartender compareceu. Se houver pagamento autorizado, tenta liberar/capturar.",
+        request=PresencaPedidoRequestSerializer,
+        responses=PedidoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='confirmar-presenca')
+    def confirmar_presenca(self, request, pk=None):
+        pedido = self.get_object()
+        serializer = PresencaPedidoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            pedido = stripe_service.confirmar_presenca_pedido(
+                pedido.id,
+                request.user,
+                observacao=serializer.validated_data.get('observacao', ''),
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(PedidoSerializer(pedido, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Registrar ausencia do bartender",
+        description="Cliente dono do pedido informa que o bartender nao compareceu. Bloqueia liberacao/captura futura.",
+        request=PresencaPedidoRequestSerializer,
+        responses=PedidoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='registrar-ausencia')
+    def registrar_ausencia(self, request, pk=None):
+        pedido = self.get_object()
+        serializer = PresencaPedidoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            pedido = stripe_service.registrar_ausencia_pedido(
+                pedido.id,
+                request.user,
+                observacao=serializer.validated_data.get('observacao', ''),
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(PedidoSerializer(pedido, context={'request': request}).data)
+
+
 @extend_schema(tags=["Propostas"])
 class PropostaViewSet(viewsets.ModelViewSet):
     serializer_class = PropostaSerializer
@@ -402,7 +454,11 @@ class PropostaViewSet(viewsets.ModelViewSet):
     def accept(self, request, pk=None):
         proposta = self.get_object()
         try:
-            proposta.accept(request.user)
+            proposta = proposta.accept(request.user)
+        except PermissionError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(proposta).data)

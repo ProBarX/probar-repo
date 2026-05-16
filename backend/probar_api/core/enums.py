@@ -34,6 +34,17 @@ class PedidoStatus(models.TextChoices):
     CONCLUIDO = 'CONCLUIDO', 'Concluído'
 
 
+class PresencaStatus(models.TextChoices):
+    PENDENTE = 'PENDENTE', 'Pendente'
+    PRESENTE = 'PRESENTE', 'Presente'
+    AUSENTE = 'AUSENTE', 'Ausente'
+
+
+class PresencaOrigem(models.TextChoices):
+    CLIENTE = 'CLIENTE', 'Cliente'
+    AUTOMATICA = 'AUTOMATICA', 'Automatica'
+
+
 class PropostaStatus(models.TextChoices):
     PENDENTE = 'PENDENTE', 'Pendente'
     ACEITA = 'ACEITA', 'Aceita'

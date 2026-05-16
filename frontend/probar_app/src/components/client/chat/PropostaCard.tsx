@@ -131,7 +131,7 @@ export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, on
 
         {status === "ACEITA" && (
           <p style={{ fontSize: "14px", color: "#3B6D11", marginTop: "10px" }}>
-            ✓ Contratação confirmada!
+            Proposta aceita. Aguardando pagamento.
           </p>
         )}
         {status === "RECUSADA" && (

@@ -337,13 +337,15 @@ class EventoSerializer(serializers.ModelSerializer):
 
 
 class PropostaSerializer(serializers.ModelSerializer):
+    valor_hora = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     valor_total = serializers.SerializerMethodField(read_only=True)
     remetente = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Proposta
         fields = [
-            'id', 'pedido', 'remetente', 'tipo', 'horas', 'valor_adicional', 'desconto', 'status', 'criado_em', 'valor_total'
+            'id', 'pedido', 'remetente', 'tipo', 'valor_hora', 'horas',
+            'valor_adicional', 'desconto', 'status', 'criado_em', 'valor_total'
         ]
 
     @extend_schema_field(OpenApiTypes.NUMBER)
@@ -361,6 +363,13 @@ class PropostaSerializer(serializers.ModelSerializer):
 
         # Normalizar tipos para evitar mix Decimal/float/str
         from decimal import Decimal
+
+        if self.instance:
+            for field in ('horas', 'valor_adicional', 'desconto'):
+                if field in data and data[field] != getattr(self.instance, field):
+                    raise serializers.ValidationError(
+                        {field: 'Este campo nao pode ser alterado depois que a proposta foi criada.'}
+                    )
 
         if 'valor_adicional' in data and data['valor_adicional'] is not None:
             data['valor_adicional'] = Decimal(str(data['valor_adicional']))
@@ -419,7 +428,12 @@ class AcceptPropostaRequestSerializer(serializers.Serializer):
     pass
 
 
+class PresencaPedidoRequestSerializer(serializers.Serializer):
+    observacao = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
 class PedidoSerializer(serializers.ModelSerializer):
+    numero_bartender = serializers.IntegerField(read_only=True, allow_null=True)
     propostas = PropostaSerializer(many=True, read_only=True)
     cliente = serializers.PrimaryKeyRelatedField(read_only=True)
     cliente_nome = serializers.CharField(source='cliente.user.name', read_only=True)
@@ -438,11 +452,18 @@ class PedidoSerializer(serializers.ModelSerializer):
     pagamento_status = serializers.SerializerMethodField()
     pagamento_valor = serializers.SerializerMethodField()
     pagamento_finalizado_pelo_cliente = serializers.SerializerMethodField()
+    presenca_status = serializers.CharField(read_only=True)
+    presenca_origem = serializers.CharField(read_only=True)
+    presenca_registrada_em = serializers.DateTimeField(read_only=True)
+    presenca_observacao = serializers.CharField(read_only=True)
+    servico_inicio_previsto = serializers.SerializerMethodField()
+    servico_fim_previsto = serializers.SerializerMethodField()
+    liberacao_automatica_em = serializers.SerializerMethodField()
 
     class Meta:
         model = Pedido
         fields = [
-            'id', 'cliente', 'cliente_nome',
+            'id', 'numero_bartender', 'cliente', 'cliente_nome',
             'bartender', 'bartender_nome', 'bartender_especialidade',
             'evento', 'evento_nome', 'evento_data', 'evento_hora_inicio',
             'evento_hora_fim', 'evento_cep', 'evento_rua', 'evento_numero',
@@ -451,6 +472,9 @@ class PedidoSerializer(serializers.ModelSerializer):
             'proposta_aprovada', 'valor_hora_aprovado', 'horas_aprovadas',
             'valor_total_aprovado', 'pagamento_id', 'pagamento_status',
             'pagamento_valor', 'pagamento_finalizado_pelo_cliente',
+            'presenca_status', 'presenca_origem', 'presenca_registrada_em',
+            'presenca_observacao', 'servico_inicio_previsto',
+            'servico_fim_previsto', 'liberacao_automatica_em',
         ]
 
     def _get_pagamento(self, obj):
@@ -478,6 +502,18 @@ class PedidoSerializer(serializers.ModelSerializer):
     def get_pagamento_finalizado_pelo_cliente(self, obj):
         pagamento = self._get_pagamento(obj)
         return pagamento.finalizado_pelo_cliente if pagamento else False
+
+    @extend_schema_field(OpenApiTypes.DATETIME)
+    def get_servico_inicio_previsto(self, obj):
+        return obj.servico_inicio_previsto
+
+    @extend_schema_field(OpenApiTypes.DATETIME)
+    def get_servico_fim_previsto(self, obj):
+        return obj.servico_fim_previsto
+
+    @extend_schema_field(OpenApiTypes.DATETIME)
+    def get_liberacao_automatica_em(self, obj):
+        return obj.liberacao_automatica_em
 
 
 class PedidoCreateSerializer(serializers.Serializer):
@@ -572,8 +608,9 @@ class AvaliacaoSerializer(serializers.ModelSerializer):
     cliente_nome = serializers.CharField(source='pedido.cliente.user.name', read_only=True)
     evento_nome = serializers.CharField(source='pedido.evento.nome', read_only=True)
     pedido_id = serializers.IntegerField(source='pedido.id', read_only=True)
+    pedido_numero_bartender = serializers.IntegerField(source='pedido.numero_bartender', read_only=True, allow_null=True)
 
     class Meta:
         model = Avaliacao
-        fields = ['id', 'pedido_id', 'nota', 'comentario', 'cliente_nome', 'evento_nome', 'criado_em']
+        fields = ['id', 'pedido_id', 'pedido_numero_bartender', 'nota', 'comentario', 'cliente_nome', 'evento_nome', 'criado_em']
         read_only_fields = ['id', 'criado_em']
