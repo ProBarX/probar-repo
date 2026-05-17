@@ -1,4 +1,5 @@
 import { api } from "./api"
+import { resolveMediaUrl } from "@/lib/media-url"
 
 export type Drink = {
   id: number
@@ -10,18 +11,18 @@ export type Bartender = {
   user_id: number
   email: string
   nome: string
-  valor_hora: number
+  valor_hora: number | string
   especialidades: string
   foto_perfil: string | null
-  anos_experiencia: number
+  anos_experiencia: number | null
   media_avaliacoes: number
   total_avaliacoes: number
-  descricao_profissional?: string
+  descricao_profissional?: string | null
   drinks?: Drink[]
 }
 
 export type BartenderDetail = Bartender & {
-  descricao_profissional: string
+  descricao_profissional: string | null
   drinks: Drink[]
 }
 
@@ -43,14 +44,29 @@ function normalizePage(data: Bartender[] | PaginatedResponse<Bartender>): Barten
     return {
       count: data.length,
       next: null,
-      results: data,
+      results: data.map(normalizeBartenderMedia),
     }
   }
 
   return {
     count: data.count,
     next: data.next,
-    results: data.results ?? [],
+    results: (data.results ?? []).map(normalizeBartenderMedia),
+  }
+}
+
+function normalizeDrinkMedia(drink: Drink): Drink {
+  return {
+    ...drink,
+    foto: resolveMediaUrl(drink.foto),
+  }
+}
+
+function normalizeBartenderMedia<T extends Bartender>(bartender: T): T {
+  return {
+    ...bartender,
+    foto_perfil: resolveMediaUrl(bartender.foto_perfil),
+    drinks: bartender.drinks?.map(normalizeDrinkMedia),
   }
 }
 
@@ -61,7 +77,7 @@ export async function fetchBartendersPage(url = "/bartenders/") {
 
 export async function fetchBartenderById(id: string | number) {
   const { data } = await api.get<BartenderDetail>(`/bartenders/${id}/`)
-  return data
+  return normalizeBartenderMedia(data)
 }
 
 export async function findBartenderByEmail(email: string) {

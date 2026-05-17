@@ -4,13 +4,29 @@ export interface User {
     email: string
     password?: string
     tipo: string
+    documentos_legais_ids?: number[]
     criado_em?: string
 }
 
-// Tipo do erro retornado pelo axios com a resposta do Django
+export type EventStatus = "Em andamento" | "Confirmado" | "Finalizado" | "Cancelado"
+
+export interface Event {
+    id?: number
+    nome: string
+    data: string
+    status?: string
+    [key: string]: unknown
+}
+
+export interface ApiErrorResponse {
+    detail?: string
+    erro?: string
+    [key: string]: unknown
+}
+
 export interface ApiError {
     response?: {
-        data?: Record<string, string | string[]>
+        data?: ApiErrorResponse
         status?: number
     }
     message?: string

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import { api } from "@/services/api"
 import { ProfileView, type ClientProfile } from "@/components/client/profile/ProfileView"
+import { resolveMediaUrl } from "@/lib/media-url"
+import { formatEventoStatus, type EventoAPI } from "@/services/useEvent"
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ClientProfile | null>(null)
@@ -10,7 +12,7 @@ export default function ProfilePage() {
   useEffect(() => {
     Promise.all([
       api.get("/clientes/me/"),
-      api.get("/eventos/"),
+      api.get<EventoAPI[] | { results?: EventoAPI[] }>("/eventos/"),
     ]).then(([{ data: cliente }, { data: eventosRaw }]) => {
       const rawData = cliente.data_nascimento // "20/02/2002"
       let dataISO = rawData
@@ -18,19 +20,19 @@ export default function ProfilePage() {
         const [dia, mes, ano] = rawData.split("/")
         dataISO = `${ano}-${mes}-${dia}`
       }
-      const eventos = "results" in eventosRaw ? eventosRaw.results : eventosRaw
+      const eventos = Array.isArray(eventosRaw) ? eventosRaw : eventosRaw.results ?? []
 
       setProfile({
         nome:            cliente.name,
         email:           cliente.email,
         data_nascimento: dataISO,
         membro_desde:    formatDate(cliente.criado_em),
-        foto_perfil:     cliente.foto_perfil ?? null,
+        foto_perfil:     resolveMediaUrl(cliente.foto_perfil),
         total_eventos:   eventos.length,
-        eventos: eventos.map((e: any) => ({
+        eventos: eventos.map((e: EventoAPI) => ({
           nome:   e.nome,
           data:   formatDate(e.data),
-          status: e.status,
+          status: formatEventoStatus(e.status),
         })),
       })
     })
