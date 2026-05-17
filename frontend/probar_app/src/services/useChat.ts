@@ -17,6 +17,7 @@ export type Proposta = {
   pedido: number
   remetente: number
   tipo: string
+  valor_hora?: number | string
   horas: number
   valor_adicional: string
   desconto: string
@@ -84,6 +85,22 @@ async function getToken(): Promise<string | null> {
   }
 }
 
+function extractApiError(data: unknown): string | null {
+  if (typeof data === "string") return data
+  if (!data || typeof data !== "object") return null
+
+  const record = data as Record<string, unknown>
+  const detail = record.detail
+  if (typeof detail === "string") return detail
+  if (Array.isArray(detail) && detail.length > 0) return String(detail[0])
+
+  const firstValue = Object.values(record)[0]
+  if (typeof firstValue === "string") return firstValue
+  if (Array.isArray(firstValue) && firstValue.length > 0) return String(firstValue[0])
+
+  return null
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const token = await getToken()
   const res = await fetch(`${API_BASE}${path}`, {
@@ -94,7 +111,16 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    let message = `Erro na API (${res.status})`
+    try {
+      const data = await res.json()
+      message = extractApiError(data) ?? message
+    } catch {
+      // Mantem a mensagem generica quando a API nao retorna JSON.
+    }
+    throw new Error(message)
+  }
   return res.json()
 }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, CheckCircle2, Clock3, CreditCard, ShieldCheck } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Clock3, CreditCard, ShieldCheck, UserCheck } from "lucide-react"
 import type { PedidoResumoChat } from "@/services/useChat"
 import { probarYellow, probarYellowBorder } from "@/components/client/chat/chatStyles"
 
@@ -120,9 +120,11 @@ function resolveNextStep(
       title: "Pagamento autorizado",
       description:
         role === "client"
-          ? "Apos o servico, confirme a presenca para liberar o pagamento."
+          ? "Acesse a etapa de presenca quando o servico terminar."
           : "O pagamento esta autorizado. Compareca no horario combinado.",
-      action: false,
+      action: role === "client",
+      actionLabel: "Gerenciar presenca",
+      actionIcon: UserCheck,
     }
   }
 
@@ -136,6 +138,8 @@ function resolveNextStep(
           ? "Conclua o pagamento para reservar o bartender."
           : "O cliente precisa concluir o pagamento antes da proxima etapa.",
       action: role === "client",
+      actionLabel: "Pagar agora",
+      actionIcon: CreditCard,
     }
   }
 
@@ -160,6 +164,7 @@ export function ChatNextStepBanner({ pedido, role, pedidoId, pendingProposalActi
   const state = resolveNextStep(pedido, role, pendingProposalAction)
   const style = getToneStyle(state.tone)
   const Icon = state.icon
+  const ActionIcon = state.actionIcon ?? CreditCard
 
   return (
     <div
@@ -238,8 +243,8 @@ export function ChatNextStepBanner({ pedido, role, pedidoId, pendingProposalActi
               boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
             }}
           >
-            <CreditCard size={15} />
-            Pagar agora
+            <ActionIcon size={15} />
+            {state.actionLabel ?? "Continuar"}
           </button>
         )}
       </div>

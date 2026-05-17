@@ -135,6 +135,7 @@ function PaymentRoute() {
   })()
   const pedidoDisplayNumber = session?.pedido_numero_bartender ?? "-"
   const missingPedido = !pedidoId
+  const chatHref = () => (session?.pedido_id ? `/client/chat?pedido=${session.pedido_id}` : "/client/chat")
 
   async function handleConfirmPresence() {
     if (!session || finalizing) return
@@ -199,7 +200,7 @@ function PaymentRoute() {
     <main style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gap: 18 }}>
       <button
         type="button"
-        onClick={() => router.push("/client/chat")}
+        onClick={() => router.push(chatHref())}
         style={{
           width: "fit-content",
           display: "inline-flex",
@@ -241,7 +242,7 @@ function PaymentRoute() {
               title="Pedido nao informado"
               message="Volte ao chat e abra o pagamento pela proposta aceita."
               actionLabel="Voltar ao chat"
-              onAction={() => router.push("/client/chat")}
+              onAction={() => router.push(chatHref())}
             />
           )}
 
@@ -253,7 +254,7 @@ function PaymentRoute() {
               title="Pagamento indisponivel"
               message={error}
               actionLabel="Voltar ao chat"
-              onAction={() => router.push("/client/chat")}
+              onAction={() => router.push(chatHref())}
             />
           )}
 
@@ -263,7 +264,7 @@ function PaymentRoute() {
               title="Sessao indisponivel"
               message="Nao foi possivel continuar este pagamento. Volte ao chat e tente abrir a proposta novamente."
               actionLabel="Voltar ao chat"
-              onAction={() => router.push("/client/chat")}
+              onAction={() => router.push(chatHref())}
             />
           )}
 
@@ -285,7 +286,7 @@ function PaymentRoute() {
                   : "O pagamento foi capturado e liberado para o pedido."
               }
               actionLabel="Voltar ao chat"
-              onAction={() => router.push("/client/chat")}
+              onAction={() => router.push(chatHref())}
             />
           )}
 
@@ -295,7 +296,7 @@ function PaymentRoute() {
               title="Ausencia registrada"
               message="O pagamento nao sera liberado automaticamente. A proxima etapa do fluxo financeiro deve tratar o estorno ou reembolso."
               actionLabel="Voltar ao chat"
-              onAction={() => router.push("/client/chat")}
+              onAction={() => router.push(chatHref())}
             />
           )}
 
@@ -305,7 +306,7 @@ function PaymentRoute() {
               error={finalizeError}
               finalizing={finalizing}
               registeringAbsence={registeringAbsence}
-              onBack={() => router.push("/client/chat")}
+              onBack={() => router.push(chatHref())}
               onConfirmPresence={handleConfirmPresence}
               onRegisterAbsence={handleRegisterAbsence}
             />

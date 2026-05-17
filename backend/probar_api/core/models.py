@@ -762,25 +762,28 @@ class Proposta(BaseModel):
         if self.pedido.status != PedidoStatus.EM_NEGOCIACAO:
             raise ValueError(_('Pedido não está em negociação.'))
 
-        tipo = PropostaTipo.INICIAL
-        if valor_adicional and valor_adicional > 0:
-            tipo = PropostaTipo.ADICIONAL
-        elif desconto and desconto > 0:
-            tipo = PropostaTipo.DESCONTO
+        valor_adicional = self._to_decimal(valor_adicional)
+        desconto = self._to_decimal(desconto)
+        if valor_adicional > 0 and desconto > 0:
+            raise ValueError(_('Nao e permitido enviar valor adicional e desconto simultaneamente.'))
 
-        # Regras de papel: apenas o bartender pode criar contrapropostas do tipo adicional/desconto
-        if tipo in (PropostaTipo.ADICIONAL, PropostaTipo.DESCONTO):
-            bartender_user = self.pedido.bartender.user
-            if user != bartender_user:
-                raise PermissionError(_('Apenas o bartender pode criar contrapropostas de adicional/desconto.'))
+        bartender_user = self.pedido.bartender.user
+        if user != bartender_user and (valor_adicional > 0 or desconto > 0):
+            raise PermissionError(_('Cliente pode contrapropor apenas a quantidade de horas.'))
+
+        tipo = PropostaTipo.INICIAL
+        if user == bartender_user and valor_adicional > 0:
+            tipo = PropostaTipo.ADICIONAL
+        elif user == bartender_user and desconto > 0:
+            tipo = PropostaTipo.DESCONTO
 
         nova = Proposta.objects.create(
             pedido=self.pedido,
             remetente=user,
             tipo=tipo,
             horas=horas if horas is not None else self.horas,
-            valor_adicional=valor_adicional if valor_adicional is not None else self.valor_adicional,
-            desconto=desconto if desconto is not None else self.desconto,
+            valor_adicional=valor_adicional if user == bartender_user else Decimal('0.00'),
+            desconto=desconto if user == bartender_user else Decimal('0.00'),
             status=PropostaStatus.PENDENTE,
         )
 

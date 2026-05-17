@@ -12,19 +12,30 @@ import {
 
 type Props = {
   propostaId: number
+  role: "client" | "bartender"
   horasAtual: number
   valorAtual: number
+  valorHoraAtual?: number
   onEnviar: (propostaId: number, dados: { horas: number; desconto?: number; valor_adicional?: number }) => void
   onCancelar: () => void
 }
 
-export function CounterPropostaForm({ propostaId, horasAtual, valorAtual, onEnviar, onCancelar }: Props) {
+export function CounterPropostaForm({
+  propostaId,
+  role,
+  horasAtual,
+  valorAtual,
+  valorHoraAtual,
+  onEnviar,
+  onCancelar,
+}: Props) {
   const [horas, setHoras] = useState(Math.max(1, horasAtual || 1))
   const [ajusteTipo, setAjusteTipo] = useState<"desconto" | "adicional">("desconto")
   const [ajusteValor, setAjusteValor] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const valorBase = horasAtual > 0 ? valorAtual / horasAtual : valorAtual
+  const canAdjustValue = role === "bartender"
+  const valorBase = valorHoraAtual && valorHoraAtual > 0 ? valorHoraAtual : horasAtual > 0 ? valorAtual / horasAtual : valorAtual
   const ajusteNumerico = parseMoneyInput(ajusteValor)
   const ajusteParaCalculo = Number.isNaN(ajusteNumerico) ? 0 : ajusteNumerico
   const novoTotal = useMemo(
@@ -38,6 +49,11 @@ export function CounterPropostaForm({ propostaId, horasAtual, valorAtual, onEnvi
 
   const handleEnviar = () => {
     setError(null)
+    if (!canAdjustValue) {
+      onEnviar(propostaId, { horas })
+      return
+    }
+
     if (Number.isNaN(ajusteNumerico)) {
       setError("Informe um valor numerico valido.")
       return
@@ -66,7 +82,9 @@ export function CounterPropostaForm({ propostaId, horasAtual, valorAtual, onEnvi
         <div>
           <p style={{ fontSize: "15px", fontWeight: 700, margin: 0 }}>Contraproposta para esta proposta</p>
           <p style={{ fontSize: "13px", color: "#777", margin: "3px 0 0", lineHeight: 1.4 }}>
-            Ajuste horas e escolha um unico tipo de valor para responder a proposta recebida.
+            {canAdjustValue
+              ? "Ajuste horas e, se necessario, escolha desconto ou valor adicional."
+              : "Responda com uma nova quantidade de horas. Valores adicionais ou descontos ficam fora da sua edicao."}
           </p>
         </div>
       </div>
@@ -94,25 +112,29 @@ export function CounterPropostaForm({ propostaId, horasAtual, valorAtual, onEnvi
           </div>
         </Field>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <ModeButton active={ajusteTipo === "desconto"} onClick={() => setAjusteTipo("desconto")}>
-            Desconto
-          </ModeButton>
-          <ModeButton active={ajusteTipo === "adicional"} onClick={() => setAjusteTipo("adicional")}>
-            Valor adicional
-          </ModeButton>
-        </div>
+        {canAdjustValue && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <ModeButton active={ajusteTipo === "desconto"} onClick={() => setAjusteTipo("desconto")}>
+                Desconto
+              </ModeButton>
+              <ModeButton active={ajusteTipo === "adicional"} onClick={() => setAjusteTipo("adicional")}>
+                Valor adicional
+              </ModeButton>
+            </div>
 
-        <Field label={ajusteTipo === "desconto" ? "Desconto (R$)" : "Valor adicional (R$)"}>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={ajusteValor}
-            onChange={(e) => setAjusteValor(cleanMoneyInput(e.target.value))}
-            placeholder="0,00"
-            style={inputStyle}
-          />
-        </Field>
+            <Field label={ajusteTipo === "desconto" ? "Desconto (R$)" : "Valor adicional (R$)"}>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={ajusteValor}
+                onChange={(e) => setAjusteValor(cleanMoneyInput(e.target.value))}
+                placeholder="0,00"
+                style={inputStyle}
+              />
+            </Field>
+          </>
+        )}
       </div>
 
       <div

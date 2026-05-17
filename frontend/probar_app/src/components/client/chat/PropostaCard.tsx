@@ -17,6 +17,7 @@ export type Proposta = {
   pedido: number
   remetente: number
   tipo: PropostaTipo | string
+  valor_hora?: number
   horas: number
   valor_adicional: string
   desconto: string

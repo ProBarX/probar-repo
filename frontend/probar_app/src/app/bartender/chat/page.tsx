@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { MessageCircle, Send } from "lucide-react"
+import { AlertCircle, ArrowLeft, MessageCircle, Send, X } from "lucide-react"
 import { PropostaCard, type Proposta } from "@/components/client/chat/PropostaCard"
 import { CounterPropostaForm } from "@/components/client/chat/CounterPropostaForm"
 import { ChatAvatar } from "@/components/client/chat/ChatAvatar"
@@ -33,6 +33,7 @@ type PropostaPayload = {
   pedido_id?: number
   remetente?: number
   tipo?: string
+  valor_hora?: string | number
   horas?: number
   valor_adicional?: string | number
   desconto?: string | number
@@ -122,6 +123,11 @@ function getPendingProposalAction(mensagens: Mensagem[], currentUserId: number):
   return Number(payload.remetente) === Number(currentUserId) ? "other" : "self"
 }
 
+function getActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && !error.message.startsWith("API error")) return error.message
+  return fallback
+}
+
 async function getCurrentUserId(): Promise<number> {
   try {
     const res = await fetch("/api/auth/get-token")
@@ -161,12 +167,32 @@ export default function BartenderChatPage() {
   const [counterParaId, setCounterParaId] = useState<number | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(pedidoIdParam))
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const shouldStickToBottomRef = useRef(true)
+  const lastScrollStateRef = useRef<{ chatId: number | null; messageCount: number }>({
+    chatId: null,
+    messageCount: 0,
+  })
 
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId)
   }, [])
+
+  useEffect(() => {
+    if (isCompact && pedidoIdParam) {
+      setMobileChatOpen(true)
+    }
+  }, [isCompact, pedidoIdParam])
+
+  useEffect(() => {
+    if (isCompact && !pedidoIdParam) {
+      setMobileChatOpen(false)
+    }
+  }, [isCompact, pedidoIdParam])
 
   // Carrega chats e enriquece com cliente_nome e evento_nome do PedidoSerializer
   const carregarChats = useCallback(async () => {
@@ -218,12 +244,37 @@ export default function BartenderChatPage() {
     carregarChats()
   }, [carregarChats])
 
-  // Scroll automático
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [chats, selectedIdx])
-
   const selectedChatId = chats[selectedIdx]?.id
+  const selectedMessageCount = chats[selectedIdx]?.mensagens.length ?? 0
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" })
+  }, [])
+
+  const handleMessagesScroll = useCallback(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    shouldStickToBottomRef.current = distanceFromBottom < 96
+  }, [])
+
+  useEffect(() => {
+    if (!selectedChatId) return
+
+    const previous = lastScrollStateRef.current
+    const changedChat = previous.chatId !== selectedChatId
+    const hasNewMessage = selectedMessageCount > previous.messageCount
+
+    if (changedChat || (hasNewMessage && shouldStickToBottomRef.current)) {
+      requestAnimationFrame(() => scrollToBottom(changedChat ? "auto" : "smooth"))
+    }
+
+    lastScrollStateRef.current = {
+      chatId: selectedChatId,
+      messageCount: selectedMessageCount,
+    }
+  }, [selectedChatId, selectedMessageCount, scrollToBottom])
 
   // Polling de mensagens
   useEffect(() => {
@@ -279,31 +330,41 @@ export default function BartenderChatPage() {
   }
 
   const handleAceitar = async (id: number) => {
+    setActionError(null)
     try {
       await aceitarProposta(id)
       updatePropostaLocal(id, "ACEITA")
       // Bartender não paga — apenas aguarda o cliente efetuar o pagamento
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel aceitar a proposta. Atualize a conversa e tente novamente."))
+    }
   }
 
   const handleRecusar = async (id: number) => {
+    setActionError(null)
     try {
       await recusarProposta(id)
       updatePropostaLocal(id, "RECUSADA")
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel recusar a proposta."))
+    }
   }
 
   const handleCancelar = async (id: number) => {
+    setActionError(null)
     try {
       await cancelarProposta(id)
       updatePropostaLocal(id, "CANCELADA")
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel cancelar a proposta."))
+    }
   }
 
   const handleEnviarCounter = async (
     propostaId: number,
     dados: { horas: number; desconto?: number; valor_adicional?: number }
   ) => {
+    setActionError(null)
     try {
       await enviarContraproposta(propostaId, dados)
       updatePropostaLocal(propostaId, "SUBSTITUIDA")
@@ -312,7 +373,9 @@ export default function BartenderChatPage() {
       setChats((prev) =>
         prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens } : c))
       )
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel enviar a contraproposta."))
+    }
   }
 
   const handleEnviarTexto = async () => {
@@ -322,6 +385,7 @@ export default function BartenderChatPage() {
 
     const conteudo = texto.trim()
     setTexto("")
+    setActionError(null)
 
     const temp: Mensagem = {
       id: Date.now(),
@@ -350,6 +414,7 @@ export default function BartenderChatPage() {
         )
       )
       setTexto(conteudo)
+      setActionError("Nao foi possivel enviar a mensagem. Verifique a conexao e tente novamente.")
     }
   }
 
@@ -365,6 +430,7 @@ export default function BartenderChatPage() {
       pedido: p.pedido_id,
       remetente: p.remetente ?? 0,
       tipo: p.tipo ?? "inicial",
+      valor_hora: toNumber(p.valor_hora),
       horas: p.horas ?? 0,
       valor_adicional: String(p.valor_adicional ?? "0.00"),
       desconto: String(p.desconto ?? "0.00"),
@@ -448,8 +514,10 @@ export default function BartenderChatPage() {
           {counterParaId === proposta.id && (
             <CounterPropostaForm
               propostaId={proposta.id}
+              role="bartender"
               horasAtual={proposta.horas}
               valorAtual={proposta.valor_total}
+              valorHoraAtual={proposta.valor_hora}
               onEnviar={handleEnviarCounter}
               onCancelar={() => setCounterParaId(null)}
             />
@@ -529,12 +597,14 @@ export default function BartenderChatPage() {
   }
 
   const conversa = chats[selectedIdx]
+  const showSidebar = !isCompact || !mobileChatOpen
+  const showConversation = !isCompact || mobileChatOpen
 
   return (
-    <div style={{ display: "flex", flexDirection: isCompact ? "column" : "row", height: "100%", width: "100%", overflow: "hidden", fontFamily: "sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "row", height: "100%", width: "100%", overflow: "hidden", fontFamily: "sans-serif" }}>
 
       {/* Sidebar */}
-      <div style={{ width: isCompact ? "100%" : 280, minWidth: isCompact ? 0 : 280, maxHeight: isCompact ? 220 : undefined, borderRight: isCompact ? "none" : "1px solid #eee", borderBottom: isCompact ? "1px solid #eee" : "none", display: "flex", flexDirection: "column", background: "#fff", flexShrink: 0 }}>
+      <div style={{ display: showSidebar ? "flex" : "none", width: isCompact ? "100%" : 280, minWidth: isCompact ? 0 : 280, height: "100%", borderRight: isCompact ? "none" : "1px solid #eee", borderBottom: "none", flexDirection: "column", background: "#fff", flex: isCompact ? 1 : undefined, flexShrink: 0 }}>
         <div style={{ height: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, padding: "16px 16px 14px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ fontWeight: 600, fontSize: "15px" }}>Negociações</span>
         </div>
@@ -548,7 +618,7 @@ export default function BartenderChatPage() {
               : ultima?.conteudo ?? ""
 
             return (
-              <div key={c.id} onClick={() => { setSelectedIdx(i); setCounterParaId(null) }}
+              <div key={c.id} onClick={() => { setSelectedIdx(i); setCounterParaId(null); setActionError(null); if (isCompact) setMobileChatOpen(true) }}
                 style={{ display: "flex", alignItems: "center", gap: "12px", padding: "14px 16px", cursor: "pointer", borderBottom: "1px solid #f5f5f5", background: i === selectedIdx ? "#fafafa" : "#fff", transition: "background 0.15s" }}
               >
                 <ChatAvatar
@@ -567,11 +637,32 @@ export default function BartenderChatPage() {
       </div>
 
       {/* Área do chat */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, background: "#fff" }}>
+      <div style={{ flex: 1, display: showConversation ? "flex" : "none", flexDirection: "column", minWidth: 0, minHeight: 0, background: "#fff" }}>
 
         {/* Header */}
         <div style={{ height: "auto", minHeight: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, position: "relative", zIndex: 2, padding: isCompact ? "12px 14px" : "14px 24px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
+            {isCompact && (
+              <button
+                type="button"
+                onClick={() => setMobileChatOpen(false)}
+                aria-label="Voltar para conversas"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  border: "1px solid #eee",
+                  background: "#fff",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                <ArrowLeft size={17} />
+              </button>
+            )}
             <ChatAvatar
               name={conversa.cliente_nome}
               src={conversa.cliente_foto_perfil}
@@ -598,8 +689,49 @@ export default function BartenderChatPage() {
           pendingProposalAction={getPendingProposalAction(conversa.mensagens, currentUserId)}
         />
 
+        {actionError && (
+          <div
+            role="alert"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: isCompact ? "9px 12px" : "9px 24px",
+              borderBottom: "1px solid #FECACA",
+              background: "#FEF2F2",
+              color: "#991B1B",
+              fontSize: "13px",
+              lineHeight: 1.35,
+              flexShrink: 0,
+            }}
+          >
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>{actionError}</span>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              aria-label="Fechar aviso"
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: "50%",
+                border: "none",
+                background: "transparent",
+                color: "#991B1B",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* Mensagens */}
-        <div style={{ flex: 1, overflowY: "auto", padding: isCompact ? "14px 12px" : "20px 24px", display: "flex", flexDirection: "column", gap: "14px", background: "#f9f9f9" }}>
+        <div ref={messagesContainerRef} onScroll={handleMessagesScroll} style={{ flex: 1, overflowY: "auto", padding: isCompact ? "14px 12px" : "20px 24px", display: "flex", flexDirection: "column", gap: "14px", background: "#f9f9f9" }}>
           {conversa.mensagens.map((msg) => renderMensagem(msg))}
           {apiLoading && <div style={{ alignSelf: "center", color: "#aaa", fontSize: "13px" }}>Processando...</div>}
           <div ref={messagesEndRef} />
@@ -625,29 +757,3 @@ export default function BartenderChatPage() {
     </div>
   )
 }
-
-// ── Badge de status ────────────────────────────────────────────────────────────
-
-/*
-function LegacyPedidoStatusBadge({ mensagens }: { mensagens: Mensagem[] }) {
-  const ultimaPropostaMsg = [...mensagens].reverse().find((m) => m.tipo === "card_proposta")
-  const payload = ultimaPropostaMsg ? getPropostaPayload(ultimaPropostaMsg.payload) : null
-  const status = payload?.status ?? null
-  if (!status) return null
-
-  const configs: Record<string, { label: string; bg: string; color: string; border: string }> = {
-    PENDENTE:    { label: "Aguardando resposta",    bg: "#fff",     color: "#BA7517", border: "1px solid #EF9F27" },
-    ACEITA:      { label: "Proposta aceita ✓",      bg: "#EAF3DE",  color: "#3B6D11", border: "1px solid #97C459" },
-    RECUSADA:    { label: "Proposta recusada",       bg: "#FCEBEB",  color: "#A32D2D", border: "1px solid #E24B4A" },
-    CANCELADA:   { label: "Cancelada",               bg: "#F1EFE8",  color: "#5F5E5A", border: "1px solid #B4B2A9" },
-    SUBSTITUIDA: { label: "Contraproposta enviada",  bg: "#E6F1FB",  color: "#185FA5", border: "1px solid #85B7EB" },
-  }
-
-  const cfg = configs[status] ?? configs.PENDENTE
-  return (
-    <span style={{ fontSize: "12px", padding: "4px 12px", borderRadius: "20px", fontWeight: 500, background: cfg.bg, color: cfg.color, border: cfg.border }}>
-      {cfg.label}
-    </span>
-  )
-}
-*/

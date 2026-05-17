@@ -539,6 +539,50 @@ def test_nao_aceita_proposta_substituida():
 
 
 @pytest.mark.django_db
+def test_cliente_contraproposta_apenas_horas_nao_herda_adicional_do_bartender():
+    pedido, proposta, api_cliente, api_bartender = _criar_pedido_com_proposta_inicial()
+
+    bartender_response = api_bartender.post(
+        f'/api/v1/propostas/{proposta.id}/counter/',
+        data={'horas': 3, 'valor_adicional': '50.00'},
+        format='json',
+    )
+    assert bartender_response.status_code == 201, bartender_response.data
+
+    proposta_bartender = Proposta.objects.get(pk=bartender_response.data['id'])
+    cliente_response = api_cliente.post(
+        f'/api/v1/propostas/{proposta_bartender.id}/counter/',
+        data={'horas': 2},
+        format='json',
+    )
+    assert cliente_response.status_code == 201, cliente_response.data
+
+    proposta_cliente = Proposta.objects.get(pk=cliente_response.data['id'])
+    proposta_bartender.refresh_from_db()
+
+    assert proposta_cliente.remetente == pedido.cliente.user
+    assert proposta_cliente.horas == 2
+    assert proposta_cliente.valor_adicional == Decimal('0.00')
+    assert proposta_cliente.desconto == Decimal('0.00')
+    assert proposta_bartender.status == PropostaStatus.SUBSTITUIDA
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('campo_valor', ['valor_adicional', 'desconto'])
+def test_cliente_nao_pode_enviar_valor_em_contraproposta(campo_valor):
+    _, proposta, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+
+    response = api_cliente.post(
+        f'/api/v1/propostas/{proposta.id}/counter/',
+        data={'horas': 2, campo_valor: '25.00'},
+        format='json',
+    )
+
+    assert response.status_code == 400
+    assert 'cliente pode contrapropor apenas' in response.data['detail'].lower()
+
+
+@pytest.mark.django_db
 def test_nao_aceita_proposta_pendente_antiga():
     pedido, proposta, _, api_bartender = _criar_pedido_com_proposta_inicial()
 
