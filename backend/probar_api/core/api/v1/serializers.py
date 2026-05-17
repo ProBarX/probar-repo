@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from core.models import User, DocumentoLegal, AceiteDocumentoLegal, Cliente, Evento, Bartender, Drink
 from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao, SolicitacaoReembolso
-from core.enums import PropostaStatus
+from core.enums import PropostaStatus, MensagemTipo
 from django.utils.translation import gettext_lazy as _
 from decimal import Decimal
 from drf_spectacular.utils import extend_schema_field, OpenApiTypes
@@ -633,26 +633,93 @@ class PedidoCreateSerializer(serializers.Serializer):
 
 class MensagemSerializer(serializers.ModelSerializer):
     remetente = serializers.PrimaryKeyRelatedField(read_only=True)
+    tipo = serializers.ChoiceField(
+        choices=[(MensagemTipo.TEXTO, 'Texto')],
+        default=MensagemTipo.TEXTO,
+    )
+    conteudo = serializers.CharField(allow_blank=False, trim_whitespace=True)
+    payload = serializers.JSONField(required=False, allow_null=True)
 
     class Meta:
         model = Mensagem
         fields = ['id', 'chat', 'remetente', 'tipo', 'conteudo', 'payload', 'criado_em']
+        read_only_fields = ['id', 'remetente', 'criado_em']
+
+    def validate(self, data):
+        if data.get('payload') not in (None, {}):
+            raise serializers.ValidationError(
+                {'payload': 'Mensagens manuais nao podem enviar payload.'}
+            )
+
+        data['payload'] = None
+        data['tipo'] = MensagemTipo.TEXTO
+        return data
 
 
 class ChatSerializer(serializers.ModelSerializer):
     mensagens = MensagemSerializer(many=True, read_only=True)
     cliente_nome = serializers.CharField(source='pedido.cliente.user.name', read_only=True)
+    cliente_foto_perfil = serializers.ImageField(source='pedido.cliente.foto_perfil', read_only=True, allow_null=True)
     bartender_nome = serializers.CharField(source='pedido.bartender.user.name', read_only=True)
+    bartender_foto_perfil = serializers.ImageField(source='pedido.bartender.foto_perfil', read_only=True, allow_null=True)
     bartender_especialidade = serializers.CharField(source='pedido.bartender.especialidades', read_only=True)
     evento_nome = serializers.CharField(source='pedido.evento.nome', read_only=True)
+    evento_data = serializers.DateField(source='pedido.evento.data', read_only=True)
+    evento_hora_inicio = serializers.TimeField(source='pedido.evento.hora_inicio', read_only=True)
+    evento_hora_fim = serializers.TimeField(source='pedido.evento.hora_fim', read_only=True)
+    evento_cep = serializers.CharField(source='pedido.evento.cep', read_only=True)
+    evento_rua = serializers.CharField(source='pedido.evento.rua', read_only=True)
+    evento_numero = serializers.CharField(source='pedido.evento.numero', read_only=True)
+    evento_complemento = serializers.CharField(source='pedido.evento.complemento', read_only=True)
+    evento_quantidade_convidados = serializers.IntegerField(source='pedido.evento.quantidade_convidados', read_only=True)
+    evento_descricao = serializers.CharField(source='pedido.evento.descricao_evento', read_only=True)
+    pedido_resumo = serializers.SerializerMethodField()
 
     class Meta:
         model = Chat
         fields = [
-            'id', 'pedido', 'cliente_nome',
-            'bartender_nome', 'bartender_especialidade',
-            'evento_nome', 'mensagens', 'criado_em',
+            'id', 'pedido', 'cliente_nome', 'cliente_foto_perfil',
+            'bartender_nome', 'bartender_foto_perfil', 'bartender_especialidade',
+            'evento_nome', 'evento_data', 'evento_hora_inicio', 'evento_hora_fim',
+            'evento_cep', 'evento_rua', 'evento_numero', 'evento_complemento',
+            'evento_quantidade_convidados', 'evento_descricao',
+            'pedido_resumo', 'mensagens', 'criado_em',
         ]
+
+    def _get_pagamento(self, pedido):
+        try:
+            return pedido.pagamento
+        except ObjectDoesNotExist:
+            return None
+
+    def _get_solicitacao_reembolso(self, pedido):
+        solicitacoes = getattr(pedido, 'solicitacoes_reembolso_ordenadas', None)
+        if solicitacoes is not None:
+            return solicitacoes[0] if solicitacoes else None
+
+        return pedido.solicitacoes_reembolso.order_by('-criado_em').first()
+
+    def _format_datetime(self, value):
+        return value.isoformat() if value else None
+
+    def get_pedido_resumo(self, obj):
+        pedido = obj.pedido
+        pagamento = self._get_pagamento(pedido)
+        solicitacao = self._get_solicitacao_reembolso(pedido)
+
+        return {
+            'pedido_id': pedido.id,
+            'numero_bartender': pedido.numero_bartender,
+            'pedido_status': pedido.status,
+            'pagamento_status': pagamento.status if pagamento else None,
+            'pagamento_finalizado_pelo_cliente': pagamento.finalizado_pelo_cliente if pagamento else False,
+            'presenca_status': pedido.presenca_status,
+            'presenca_origem': pedido.presenca_origem,
+            'servico_fim_previsto': self._format_datetime(pedido.servico_fim_previsto),
+            'liberacao_automatica_em': self._format_datetime(pedido.liberacao_automatica_em),
+            'solicitacao_reembolso_status': solicitacao.status if solicitacao else None,
+            'solicitacao_reembolso_tipo': solicitacao.tipo if solicitacao else None,
+        }
 
 
 class AvaliacaoSerializer(serializers.ModelSerializer):

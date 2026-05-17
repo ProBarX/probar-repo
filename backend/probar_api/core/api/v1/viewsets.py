@@ -5,6 +5,7 @@ from .serializers import UserSerializer, DocumentoLegalSerializer, AceiteDocumen
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from drf_spectacular.utils import extend_schema, OpenApiExample
 from core.enums import PedidoStatus, TipoUsuario, TipoDocumentoLegal, SolicitacaoReembolsoStatus
 from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao, SolicitacaoReembolso
@@ -608,6 +609,13 @@ class PropostaViewSet(viewsets.ModelViewSet):
         return Proposta.objects.filter(models.Q(remetente=user) | models.Q(pedido__cliente__user=user) | models.Q(pedido__bartender__user=user))
 
     def perform_create(self, serializer):
+        pedido = serializer.validated_data.get('pedido')
+        user = self.request.user
+
+        if pedido:
+            if user != pedido.cliente.user and user != pedido.bartender.user:
+                raise PermissionDenied('Usuario nao participa deste pedido.')
+
         serializer.save(remetente=self.request.user)
 
     @extend_schema(
@@ -708,7 +716,7 @@ class PropostaViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema(tags=["Chats"])
-class ChatViewSet(viewsets.ModelViewSet):
+class ChatViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ChatSerializer
     permission_classes = [IsAuthenticated]
     lookup_value_regex = "[0-9]+"
@@ -722,7 +730,26 @@ class ChatViewSet(viewsets.ModelViewSet):
             'pedido__cliente__user',
             'pedido__bartender__user',
             'pedido__evento',
-        ).prefetch_related('mensagens')
+            'pedido__pagamento',
+        ).prefetch_related(
+            'mensagens',
+            models.Prefetch(
+                'pedido__solicitacoes_reembolso',
+                queryset=SolicitacaoReembolso.objects.order_by('-criado_em'),
+                to_attr='solicitacoes_reembolso_ordenadas',
+            ),
+        ).annotate(
+            ultima_atividade_em=Coalesce(models.Max('mensagens__criado_em'), 'criado_em')
+        ).order_by('-ultima_atividade_em', '-id')
+
+        pedido_id = self.request.query_params.get('pedido')
+        if pedido_id:
+            try:
+                pedido_id = int(pedido_id)
+            except (TypeError, ValueError):
+                return Chat.objects.none()
+            queryset = queryset.filter(pedido_id=pedido_id)
+
         if user.is_staff:
             return queryset
         return queryset.filter(models.Q(pedido__cliente__user=user) | models.Q(pedido__bartender__user=user))
@@ -733,6 +760,7 @@ class MensagemViewSet(viewsets.ModelViewSet):
     serializer_class = MensagemSerializer
     permission_classes = [IsAuthenticated]
     lookup_value_regex = "[0-9]+"
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -744,6 +772,14 @@ class MensagemViewSet(viewsets.ModelViewSet):
         return Mensagem.objects.filter(models.Q(chat__pedido__cliente__user=user) | models.Q(chat__pedido__bartender__user=user))
 
     def perform_create(self, serializer):
+        chat = serializer.validated_data.get('chat')
+        user = self.request.user
+
+        if chat:
+            pedido = chat.pedido
+            if user != pedido.cliente.user and user != pedido.bartender.user:
+                raise PermissionDenied('Usuario nao participa deste chat.')
+
         serializer.save(remetente=self.request.user)
 
     @extend_schema(

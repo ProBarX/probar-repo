@@ -35,13 +35,39 @@ export type Mensagem = {
   criado_em: string
 }
 
+export type PedidoResumoChat = {
+  pedido_id: number
+  numero_bartender: number | null
+  pedido_status: string | null
+  pagamento_status: string | null
+  pagamento_finalizado_pelo_cliente: boolean
+  presenca_status: string | null
+  presenca_origem: string | null
+  servico_fim_previsto: string | null
+  liberacao_automatica_em: string | null
+  solicitacao_reembolso_status: string | null
+  solicitacao_reembolso_tipo: string | null
+}
+
 export type Chat = {
   id: number
   pedido: number
   cliente_nome?: string
+  cliente_foto_perfil?: string | null
   bartender_nome?: string
+  bartender_foto_perfil?: string | null
   bartender_especialidade?: string
   evento_nome?: string
+  evento_data?: string | null
+  evento_hora_inicio?: string | null
+  evento_hora_fim?: string | null
+  evento_cep?: string | null
+  evento_rua?: string | null
+  evento_numero?: string | null
+  evento_complemento?: string | null
+  evento_quantidade_convidados?: number | null
+  evento_descricao?: string | null
+  pedido_resumo?: PedidoResumoChat | null
   mensagens: Mensagem[]
   criado_em: string
 }
@@ -79,12 +105,17 @@ export function useChat() {
   const [error, setError] = useState<string | null>(null)
 
   // Buscar chats — suporta resposta paginada { count, results } e array direto
-  const getChats = useCallback(async (): Promise<Chat[]> => {
-    const data = await apiFetch<Chat[] | { count: number; results: Chat[] }>("/chats/")
+  const getChats = useCallback(async (pedidoId?: number): Promise<Chat[]> => {
+    const query = pedidoId ? `?pedido=${encodeURIComponent(String(pedidoId))}` : ""
+    const data = await apiFetch<Chat[] | { count: number; results: Chat[] }>(`/chats/${query}`)
     return Array.isArray(data) ? data : (data.results ?? [])
   }, [])
 
   // Buscar mensagens de um chat específico
+  const getChat = useCallback(async (chatId: number): Promise<Chat> => {
+    return apiFetch<Chat>(`/chats/${chatId}/`)
+  }, [])
+
   const getMensagens = useCallback(async (chatId: number): Promise<Mensagem[]> => {
     const chat = await apiFetch<Chat>(`/chats/${chatId}/`)
     return chat.mensagens
@@ -158,6 +189,7 @@ export function useChat() {
     loading,
     error,
     getChats,
+    getChat,
     getMensagens,
     enviarMensagem,
     aceitarProposta,

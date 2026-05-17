@@ -1,11 +1,19 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
+import { MessageCircle, Send } from "lucide-react"
 import { PropostaCard, type Proposta } from "@/components/client/chat/PropostaCard"
 import { CounterPropostaForm } from "@/components/client/chat/CounterPropostaForm"
+import { ChatAvatar } from "@/components/client/chat/ChatAvatar"
+import { ChatEventoCard, type EventoChatDetails } from "@/components/client/chat/ChatEventoCard"
+import { ChatNextStepBanner } from "@/components/client/chat/ChatNextStepBanner"
+import { ChatStatusBadge } from "@/components/client/chat/ChatStatusBadge"
+import { chatCardContainerStyle } from "@/components/client/chat/chatStyles"
+import { useIsCompactChat } from "@/components/client/chat/useIsCompactChat"
 import { useChat, type Chat, type Mensagem } from "@/services/useChat"
 import { api } from "@/services/api"
+import { getPedidoDisplayNumber, resolvePedidoVisualStatus } from "@/lib/chat-status"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +47,10 @@ type EventoPayload = {
   data?: string
   hora_inicio?: string
   hora_fim?: string
+  cep?: string
+  rua?: string
+  numero?: string
+  complemento?: string
   quantidade_convidados?: number
   descricao_evento?: string
 }
@@ -50,12 +62,32 @@ function getResults<T>(data: T[] | { results?: T[] }): T[] {
   return Array.isArray(data) ? data : data.results ?? []
 }
 
+function parsePedidoParam(value: string | null) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
 function getPropostaPayload(payload: Mensagem["payload"]): PropostaPayload | null {
   return payload ? (payload as PropostaPayload) : null
 }
 
 function getEventoPayload(payload: Mensagem["payload"]): EventoPayload | null {
   return payload ? (payload as EventoPayload) : null
+}
+
+function getEventoDetails(payload: EventoPayload | null, chat?: Chat): EventoChatDetails {
+  return {
+    nome: payload?.nome ?? chat?.evento_nome,
+    data: payload?.data ?? chat?.evento_data,
+    hora_inicio: payload?.hora_inicio ?? chat?.evento_hora_inicio,
+    hora_fim: payload?.hora_fim ?? chat?.evento_hora_fim,
+    cep: payload?.cep ?? chat?.evento_cep,
+    rua: payload?.rua ?? chat?.evento_rua,
+    numero: payload?.numero ?? chat?.evento_numero,
+    complemento: payload?.complemento ?? chat?.evento_complemento,
+    quantidade_convidados: payload?.quantidade_convidados ?? chat?.evento_quantidade_convidados,
+    descricao_evento: payload?.descricao_evento ?? chat?.evento_descricao,
+  }
 }
 
 function toNumber(value: unknown, fallback = 0) {
@@ -81,6 +113,17 @@ function toPropostaStatus(status: unknown): Proposta["status"] {
   return "PENDENTE"
 }
 
+function getPendingProposalAction(mensagens: Mensagem[], currentUserId: number): "self" | "other" | null {
+  if (!currentUserId) return null
+  const pendingMessage = [...mensagens].reverse().find((m) => {
+    const payload = getPropostaPayload(m.payload)
+    return m.tipo === "card_proposta" && payload?.status === "PENDENTE"
+  })
+  const payload = pendingMessage ? getPropostaPayload(pendingMessage.payload) : null
+  if (!payload?.remetente) return null
+  return Number(payload.remetente) === Number(currentUserId) ? "other" : "self"
+}
+
 async function getCurrentUserId(): Promise<number> {
   try {
     const res = await fetch("/api/auth/get-token")
@@ -97,8 +140,13 @@ async function getCurrentUserId(): Promise<number> {
 
 export default function ClientChatPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isCompact = useIsCompactChat()
+  const pedidoParam = searchParams.get("pedido")
+  const pedidoIdParam = parsePedidoParam(pedidoParam)
   const {
     getChats,
+    getChat,
     getMensagens,
     enviarMensagem,
     aceitarProposta,
@@ -127,11 +175,21 @@ export default function ClientChatPage() {
   const carregarChats = useCallback(async () => {
     try {
       const data = await getChats()
+      let chatsData = data
+
+      if (pedidoIdParam && !data.some((chat) => chat.pedido === pedidoIdParam)) {
+        const chatDoPedido = await getChats(pedidoIdParam)
+        const idsDoPedido = new Set(chatDoPedido.map((chat) => chat.id))
+        chatsData = [
+          ...chatDoPedido,
+          ...data.filter((chat) => !idsDoPedido.has(chat.id)),
+        ]
+      }
 
       const { data: pedidosRaw } = await api.get<PedidoResumo[] | { results?: PedidoResumo[] }>("/pedidos/")
       const pedidos = getResults(pedidosRaw)
 
-      const enriquecidos: ChatEnriquecido[] = data.map((c) => {
+      const enriquecidos: ChatEnriquecido[] = chatsData.map((c) => {
         const pedido = pedidos.find((p) => p.id === c.pedido)
         const bartenderNome = c.bartender_nome?.trim() || pedido?.bartender_nome?.trim() || "Bartender"
 
@@ -144,12 +202,22 @@ export default function ClientChatPage() {
       })
 
       setChats(enriquecidos)
+      setSelectedIdx((current) => {
+        if (pedidoIdParam) {
+          const index = enriquecidos.findIndex((chat) => chat.pedido === pedidoIdParam)
+          if (index >= 0) return index
+        }
+        return current < enriquecidos.length ? current : 0
+      })
+      if (pedidoIdParam && enriquecidos.some((chat) => chat.pedido === pedidoIdParam)) {
+        setCounterParaId(null)
+      }
     } catch {
       setError("Não foi possível carregar as conversas.")
     } finally {
       setLoadingChats(false)
     }
-  }, [getChats])
+  }, [getChats, pedidoIdParam])
 
   useEffect(() => {
     carregarChats()
@@ -168,9 +236,19 @@ export default function ClientChatPage() {
 
     const poll = async () => {
       try {
-        const mensagens = await getMensagens(selectedChatId)
+        const chatAtualizado = await getChat(selectedChatId)
         setChats((prev) =>
-          prev.map((c) => (c.id === selectedChatId ? { ...c, mensagens } : c))
+          prev.map((c) =>
+            c.id === selectedChatId
+              ? {
+                  ...c,
+                  ...chatAtualizado,
+                  bartender_nome: chatAtualizado.bartender_nome?.trim() || c.bartender_nome,
+                  bartender_especialidade: chatAtualizado.bartender_especialidade ?? c.bartender_especialidade,
+                  evento_nome: chatAtualizado.evento_nome ?? c.evento_nome,
+                }
+              : c
+          )
         )
       } catch {}
     }
@@ -180,7 +258,7 @@ export default function ClientChatPage() {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
-  }, [getMensagens, selectedChatId])
+  }, [getChat, selectedChatId])
 
   // ── Ações de proposta ──────────────────────────────────────────────────────
 
@@ -323,7 +401,8 @@ export default function ClientChatPage() {
         <div
           key={msg.id}
           style={{
-            maxWidth: "75%",
+            maxWidth: isCompact ? "86%" : "75%",
+            minWidth: 0,
             padding: "10px 12px 6px",
             borderRadius: "14px",
             fontSize: "15px",
@@ -338,6 +417,7 @@ export default function ClientChatPage() {
             display: "flex",
             flexDirection: "column",
             gap: "4px",
+            overflowWrap: "anywhere",
           }}
         >
           <span>{msg.conteudo}</span>
@@ -359,10 +439,11 @@ export default function ClientChatPage() {
     if (msg.tipo === "card_proposta") {
       const proposta = extractProposta(msg)
       if (!proposta) return null
+      const align = Number(proposta.remetente) === Number(currentUserId) ? "right" : "left"
       return (
         <div
           key={msg.id}
-          style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+          style={chatCardContainerStyle(align)}
         >
           <PropostaCard
             proposta={proposta}
@@ -389,86 +470,35 @@ export default function ClientChatPage() {
 
     if (msg.tipo === "card_evento") {
       const p = getEventoPayload(msg.payload)
-      if (!p) return null
       return (
-        <div
+        <ChatEventoCard
           key={msg.id}
-          style={{
-            alignSelf: "center",
-            background: "#fff",
-            border: "1px solid #eee",
-            borderRadius: "12px",
-            padding: "12px 16px",
-            fontSize: "13px",
-            color: "#555",
-            maxWidth: "340px",
-            width: "100%",
-          }}
-        >
-          <p
-            style={{
-              margin: "0 0 6px",
-              fontWeight: 600,
-              fontSize: "14px",
-              color: "#1a1a1a",
-            }}
-          >
-            📅 {p.nome}
-          </p>
-          <p style={{ margin: 0, color: "#888" }}>
-            {p.data} · {p.hora_inicio?.slice(0, 5)} – {p.hora_fim?.slice(0, 5)}
-          </p>
-          <p style={{ margin: "4px 0 0", color: "#888" }}>
-            {p.quantidade_convidados} convidados
-          </p>
-          {p.descricao_evento && (
-            <p style={{ margin: "4px 0 0", color: "#aaa", fontSize: "12px" }}>
-              {p.descricao_evento}
-            </p>
-          )}
-        </div>
+          evento={getEventoDetails(p, chats[selectedIdx])}
+          align="left"
+        />
       )
     }
 
     if (msg.tipo === "status_update") {
-      const isAceite = msg.conteudo?.toLowerCase().includes("aceita")
-      const pedidoId =
-        typeof msg.payload?.pedido_id === "number" ? msg.payload.pedido_id : null
       return (
         <div
           key={msg.id}
           style={{
-            alignSelf: "center",
-            background: isAceite ? "#EAF3DE" : "#f5f5f5",
-            border: isAceite ? "1px solid #97C459" : "none",
-            borderRadius: "20px",
-            padding: "6px 16px",
+            alignSelf: isOwn ? "flex-end" : "flex-start",
+            background: "#fff",
+            border: "0.5px solid #eee",
+            borderRadius: "10px",
+            padding: "8px 11px",
             fontSize: "12px",
-            color: isAceite ? "#3B6D11" : "#888",
-            fontWeight: isAceite ? 600 : 400,
+            color: "#777",
+            fontWeight: 400,
+            width: "min(100%, 392px)",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
           }}
         >
           {msg.conteudo}
-          {/* Botão de ir para pagamento quando proposta for aceita */}
-          {isAceite && (
-            <button
-              onClick={() => router.push(pedidoId ? `/client/payment?pedido=${pedidoId}` : "/client/chat")}
-              style={{
-                display: "block",
-                marginTop: "8px",
-                padding: "6px 16px",
-                background: "#F5C518",
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: "pointer",
-                color: "#1a1a1a",
-              }}
-            >
-              Ir para pagamento →
-            </button>
-          )}
         </div>
       )
     }
@@ -538,7 +568,7 @@ export default function ClientChatPage() {
           gap: "16px",
         }}
       >
-        <div style={{ fontSize: "40px" }}>💬</div>
+        <MessageCircle size={40} color="#aaa" strokeWidth={1.8} />
         <p style={{ margin: 0, fontWeight: 600, fontSize: "16px" }}>
           Nenhuma conversa ainda
         </p>
@@ -568,6 +598,7 @@ export default function ClientChatPage() {
     <div
       style={{
         display: "flex",
+        flexDirection: isCompact ? "column" : "row",
         height: "100%",
         width: "100%",
         overflow: "hidden",
@@ -577,12 +608,15 @@ export default function ClientChatPage() {
       {/* ── Sidebar de conversas ──────────────────────────────────────────── */}
       <div
         style={{
-          width: 280,
-          minWidth: 280,
-          borderRight: "1px solid #eee",
+          width: isCompact ? "100%" : 280,
+          minWidth: isCompact ? 0 : 280,
+          maxHeight: isCompact ? 220 : undefined,
+          borderRight: isCompact ? "none" : "1px solid #eee",
+          borderBottom: isCompact ? "1px solid #eee" : "none",
           display: "flex",
           flexDirection: "column",
           background: "#fff",
+          flexShrink: 0,
         }}
       >
         {/* Header */}
@@ -607,22 +641,10 @@ export default function ClientChatPage() {
             const ultima = c.mensagens.at(-1)
             const preview =
               ultima?.tipo === "card_proposta"
-                ? "📋 Proposta enviada"
+                ? "Proposta enviada"
                 : ultima?.tipo === "status_update"
                 ? ultima.conteudo
                 : ultima?.conteudo ?? ""
-
-            // Badge quando bartender enviou contraproposta pendente
-            const temRespostaPendente = c.mensagens.some(
-              (m) => {
-                const payload = getPropostaPayload(m.payload)
-                return (
-                  m.tipo === "card_proposta" &&
-                  payload?.status === "PENDENTE" &&
-                  payload.remetente !== currentUserId
-                )
-              }
-            )
 
             return (
               <div
@@ -642,38 +664,11 @@ export default function ClientChatPage() {
                   transition: "background 0.15s",
                 }}
               >
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    background: avatarColors[i % avatarColors.length],
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#fff",
-                    fontWeight: 600,
-                    fontSize: "15px",
-                    flexShrink: 0,
-                    position: "relative",
-                  }}
-                >
-                  {c.bartender_nome[0]?.toUpperCase() ?? "B"}
-                  {temRespostaPendente && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: -2,
-                        right: -2,
-                        width: 12,
-                        height: 12,
-                        borderRadius: "50%",
-                        background: "#F5C518",
-                        border: "2px solid #fff",
-                      }}
-                    />
-                  )}
-                </div>
+                <ChatAvatar
+                  name={c.bartender_nome}
+                  src={c.bartender_foto_perfil}
+                  color={avatarColors[i % avatarColors.length]}
+                />
 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p
@@ -711,60 +706,65 @@ export default function ClientChatPage() {
           display: "flex",
           flexDirection: "column",
           minWidth: 0,
+          minHeight: 0,
           background: "#fff",
         }}
       >
         {/* Header do chat */}
         <div
           style={{
-            height: CHAT_HEADER_HEIGHT,
+            height: "auto",
             boxSizing: "border-box",
             flexShrink: 0,
-            padding: "14px 24px",
+            minHeight: CHAT_HEADER_HEIGHT,
+            position: "relative",
+            zIndex: 2,
+            padding: isCompact ? "12px 14px" : "14px 24px",
             borderBottom: "1px solid #eee",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: "12px",
+            flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                background: avatarColors[selectedIdx % avatarColors.length],
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#fff",
-                fontWeight: 600,
-                fontSize: "15px",
-              }}
-            >
-              {conversa.bartender_nome[0]?.toUpperCase() ?? "B"}
-            </div>
-            <div>
-              <p style={{ fontWeight: 600, margin: 0, fontSize: "17px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
+            <ChatAvatar
+              name={conversa.bartender_nome}
+              src={conversa.bartender_foto_perfil}
+              color={avatarColors[selectedIdx % avatarColors.length]}
+              size={40}
+            />
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontWeight: 600, margin: 0, fontSize: "17px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {conversa.bartender_nome}
               </p>
-              <p style={{ fontSize: "12px", color: "#999", margin: 0 }}>
-                {conversa.bartender_especialidade}
-                {conversa.evento_nome && ` · 📅 ${conversa.evento_nome}`}
+              <p style={{ fontSize: "12px", color: "#999", margin: 0, overflowWrap: "anywhere" }}>
+                Pedido #{getPedidoDisplayNumber(conversa.pedido_resumo, conversa.pedido)}
+                {conversa.bartender_especialidade && ` - ${conversa.bartender_especialidade}`}
+                {conversa.evento_nome && ` - ${conversa.evento_nome}`}
               </p>
             </div>
           </div>
 
           {/* Badge de status */}
-          <PedidoStatusBadge mensagens={conversa.mensagens} />
+          <ChatStatusBadge status={resolvePedidoVisualStatus(conversa.pedido_resumo)} />
         </div>
+
+        <ChatNextStepBanner
+          pedido={conversa.pedido_resumo}
+          role="client"
+          pedidoId={conversa.pedido}
+          pendingProposalAction={getPendingProposalAction(conversa.mensagens, currentUserId)}
+          onPay={(id) => router.push(`/client/payment?pedido=${id}`)}
+        />
 
         {/* Mensagens */}
         <div
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: "20px 24px",
+            padding: isCompact ? "14px 12px" : "20px 24px",
             display: "flex",
             flexDirection: "column",
             gap: "14px",
@@ -791,7 +791,7 @@ export default function ClientChatPage() {
         {/* Input */}
         <div
           style={{
-            padding: "14px 24px",
+            padding: isCompact ? "10px 12px" : "14px 24px",
             borderTop: "1px solid #eee",
             display: "flex",
             alignItems: "center",
@@ -833,17 +833,7 @@ export default function ClientChatPage() {
               transition: "background 0.15s",
             }}
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#1a1a1a"
-              strokeWidth="2"
-            >
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
+            <Send size={16} color="#1a1a1a" strokeWidth={2} />
           </button>
         </div>
       </div>
@@ -853,7 +843,8 @@ export default function ClientChatPage() {
 
 // ── Badge de status do pedido ──────────────────────────────────────────────────
 
-function PedidoStatusBadge({ mensagens }: { mensagens: Mensagem[] }) {
+/*
+function LegacyPedidoStatusBadge({ mensagens }: { mensagens: Mensagem[] }) {
   const ultimaPropostaMsg = [...mensagens]
     .reverse()
     .find((m) => m.tipo === "card_proposta")
@@ -917,3 +908,4 @@ function PedidoStatusBadge({ mensagens }: { mensagens: Mensagem[] }) {
     </span>
   )
 }
+*/

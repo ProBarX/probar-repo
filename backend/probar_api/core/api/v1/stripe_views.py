@@ -1,5 +1,6 @@
 import stripe
 from django.conf import settings
+from django.db import transaction
 from urllib.parse import urlparse
 
 from rest_framework.decorators import api_view, permission_classes
@@ -404,6 +405,64 @@ def confirmar_setup_pagamento(request, pagamento_id):
 
     except Pagamento.DoesNotExist:
         return Response({"erro": "Pagamento nÃ£o encontrado"}, status=404)
+
+    except ValueError as e:
+        return Response({"erro": str(e)}, status=400)
+
+
+@extend_schema(
+    tags=[TAG_STRIPE_PAGAMENTOS],
+    summary="Sincronizar PaymentIntent autorizado",
+    description=(
+        "Consulta o PaymentIntent na Stripe apos a confirmacao no frontend e registra no backend "
+        "que o pagamento esta autorizado para captura manual. Nao captura, cancela ou reembolsa valores."
+    ),
+    request=None,
+    responses={
+        200: StripePagamentoResponseSerializer,
+        400: OpenApiResponse(StripeErroSerializer, description="PaymentIntent ainda nao esta autorizado."),
+        403: OpenApiResponse(StripeErroSerializer, description="Usuario sem permissao para sincronizar este pagamento."),
+        404: OpenApiResponse(StripeErroSerializer, description="Pagamento nao encontrado."),
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def confirmar_pagamento_autorizado(request, pagamento_id):
+    try:
+        with transaction.atomic():
+            pagamento = (
+                Pagamento.objects
+                .select_for_update()
+                .select_related("pedido__cliente", "pedido__evento")
+                .get(id=pagamento_id)
+            )
+
+            if not hasattr(request.user, "cliente"):
+                return Response(
+                    {"erro": "Apenas clientes podem confirmar pagamento"},
+                    status=403,
+                )
+
+            if pagamento.pedido.cliente.user_id != request.user.id:
+                return Response(
+                    {"erro": "Voce nao pode confirmar este pagamento"},
+                    status=403,
+                )
+
+            pagamento, intent = stripe_service.sincronizar_payment_intent_autorizado(
+                pagamento
+            )
+
+        return Response(_pagamento_payload(pagamento, intent))
+
+    except Pagamento.DoesNotExist:
+        return Response({"erro": "Pagamento nao encontrado"}, status=404)
+
+    except stripe.error.StripeError as e:
+        return Response(
+            {"erro": getattr(e, "user_message", None) or str(e)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     except ValueError as e:
         return Response({"erro": str(e)}, status=400)

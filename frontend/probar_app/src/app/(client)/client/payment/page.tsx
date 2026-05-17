@@ -6,6 +6,7 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { loadStripe } from "@stripe/stripe-js"
 import { AlertCircle, ArrowLeft, CheckCircle2, CreditCard, Loader2, ShieldCheck, UserCheck, UserX } from "lucide-react"
 import {
+  confirmarPagamentoAutorizado,
   confirmarSetupPagamento,
   criarPagamento,
   confirmarPresencaPedido,
@@ -42,7 +43,7 @@ function isPaidPaymentStatus(status?: string | null) {
 }
 
 function isAuthorizedPaymentStatus(status?: string | null) {
-  return isCapturablePaymentStatus(status) || isPaidPaymentStatus(status)
+  return isCapturablePaymentStatus(status)
 }
 
 function isConfirmedSetupStatus(status?: string | null) {
@@ -327,10 +328,16 @@ function PaymentRoute() {
             >
               <PaymentForm
                 session={stripeElementsSession}
-                onConfirmed={(stripeStatus) => {
+                onConfirmed={(stripeStatus, updatedSession) => {
                   setConfirmedStatus(stripeStatus)
                   setSession((current) =>
-                    current ? { ...current, stripe_status: stripeStatus } : current
+                    current
+                      ? {
+                          ...current,
+                          ...(updatedSession ?? {}),
+                          stripe_status: stripeStatus,
+                        }
+                      : current
                   )
                 }}
               />
@@ -567,7 +574,7 @@ function PaymentForm({
   onConfirmed,
 }: {
   session: PaymentSession
-  onConfirmed: (stripeStatus: string) => void
+  onConfirmed: (stripeStatus: string, updatedSession?: PaymentSession) => void
 }) {
   const stripe = useStripe()
   const elements = useElements()
@@ -601,7 +608,7 @@ function PaymentForm({
       if (isConfirmedSetupStatus(status)) {
         try {
           const updated = await confirmarSetupPagamento(session.pagamento_id)
-          onConfirmed(updated.stripe_status ?? status)
+          onConfirmed(updated.stripe_status ?? status, updated)
         } catch (err) {
           setError(getErrorMessage(err))
           setSubmitting(false)
@@ -632,7 +639,14 @@ function PaymentForm({
 
     const status = result.paymentIntent?.status ?? null
     if (isAuthorizedPaymentStatus(status)) {
-      onConfirmed(status)
+      try {
+        const updated = await confirmarPagamentoAutorizado(session.pagamento_id)
+        onConfirmed(updated.stripe_status ?? status, updated)
+      } catch (err) {
+        setError(getErrorMessage(err, "Pagamento autorizado, mas nao foi possivel atualizar o chat."))
+        setSubmitting(false)
+        return
+      }
       setSubmitting(false)
       return
     }

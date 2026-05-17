@@ -43,6 +43,11 @@ export async function confirmarSetupPagamento(pagamentoId: number) {
   return data
 }
 
+export async function confirmarPagamentoAutorizado(pagamentoId: number) {
+  const { data } = await api.post<PaymentSession>(`/stripe/pagamento-autorizado/${pagamentoId}/`)
+  return data
+}
+
 export async function finalizarPagamento(pagamentoId: number) {
   const { data } = await api.post<{ status: string }>(`/stripe/finalizar/${pagamentoId}/`)
   return data

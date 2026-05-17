@@ -1,5 +1,14 @@
 "use client"
 
+import { Ban, Check, ClipboardList, RotateCcw, X } from "lucide-react"
+import {
+  chatCardBorder,
+  chatCardShellStyle,
+  probarBlue,
+  probarYellow,
+  probarYellowBorder,
+} from "@/components/client/chat/chatStyles"
+
 export type PropostaStatus = "PENDENTE" | "ACEITA" | "RECUSADA" | "CANCELADA" | "SUBSTITUIDA"
 export type PropostaTipo = "inicial" | "adicional" | "desconto"
 
@@ -30,99 +39,152 @@ const statusLabel: Record<PropostaStatus, string> = {
   ACEITA: "Aceita",
   RECUSADA: "Recusada",
   CANCELADA: "Cancelada",
-  SUBSTITUIDA: "Substituída",
+  SUBSTITUIDA: "Substituida",
 }
 
 const statusStyle: Record<PropostaStatus, React.CSSProperties> = {
-  PENDENTE:    { background: "#fff",     color: "#BA7517", border: "0.5px solid #EF9F27" },
-  ACEITA:      { background: "#EAF3DE", color: "#3B6D11", border: "0.5px solid #97C459" },
-  RECUSADA:    { background: "#FCEBEB", color: "#A32D2D", border: "0.5px solid #E24B4A" },
-  CANCELADA:   { background: "#F1EFE8", color: "#5F5E5A", border: "0.5px solid #B4B2A9" },
-  SUBSTITUIDA: { background: "#E6F1FB", color: "#185FA5", border: "0.5px solid #85B7EB" },
+  PENDENTE: { background: "#F5F5F5", color: "#5F5E5A", border: "0.5px solid #DDDDDD" },
+  ACEITA: { background: "#EAF3DE", color: "#3B6D11", border: "0.5px solid #97C459" },
+  RECUSADA: { background: "#FCEBEB", color: "#A32D2D", border: "0.5px solid #E24B4A" },
+  CANCELADA: { background: "#F1EFE8", color: "#5F5E5A", border: "0.5px solid #B4B2A9" },
+  SUBSTITUIDA: { background: "#E9F1F9", color: probarBlue, border: "0.5px solid #B9D1EA" },
 }
 
-export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, onCancelar, onCounter }: Props) {
-  const isMinhaProposta = proposta.remetente === currentUserId
-  const isPendente = proposta.status === "PENDENTE"
+function money(value: number | string) {
+  return Number(value).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
-  // Normaliza status para uppercase caso venha lowercase do backend em algum caso
+export function PropostaCard({
+  proposta,
+  currentUserId,
+  onAceitar,
+  onRecusar,
+  onCancelar,
+  onCounter,
+}: Props) {
+  const hasCurrentUser = Number(currentUserId) > 0
+  const isMinhaProposta = hasCurrentUser && Number(proposta.remetente) === Number(currentUserId)
+  const isPendente = proposta.status === "PENDENTE"
   const status = (proposta.status?.toUpperCase() ?? "PENDENTE") as PropostaStatus
+  const senderLabel = isMinhaProposta ? "Enviada por voce" : "Recebida para resposta"
+  const desconto = Number(proposta.desconto || 0)
+  const adicional = Number(proposta.valor_adicional || 0)
+  const isContraproposta = proposta.tipo !== "inicial"
 
   return (
-    <div style={{
-      borderRadius: "12px",
-      overflow: "hidden",
-      border: "0.5px solid #eee",
-      backgroundColor: "#fff",
-      maxWidth: "340px",
-      alignSelf: "flex-end",
-    }}>
-      {/* Header amarelo */}
-      <div style={{
-        backgroundColor: "#F5C518",
-        padding: "10px 14px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}>
-        <span style={{ fontWeight: 500, fontSize: "15px", color: "#1a1a1a" }}>
-          $ Proposta
+    <div
+      style={{
+        ...chatCardShellStyle,
+        borderRadius: "12px",
+        overflow: "hidden",
+        border: chatCardBorder,
+        backgroundColor: "#fff",
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: probarYellow,
+          padding: "10px 14px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontWeight: 600,
+            fontSize: "15px",
+            color: "#1a1a1a",
+            minWidth: 0,
+          }}
+        >
+          <ClipboardList size={16} strokeWidth={2} />
+          Proposta
         </span>
-        <span style={{
-          fontSize: "12px",
-          padding: "2px 8px",
-          borderRadius: "20px",
-          fontWeight: 500,
-          ...(statusStyle[status] ?? statusStyle.PENDENTE),
-        }}>
+        <span
+          style={{
+            flexShrink: 0,
+            fontSize: "12px",
+            padding: "2px 8px",
+            borderRadius: "20px",
+            fontWeight: 600,
+            ...(statusStyle[status] ?? statusStyle.PENDENTE),
+          }}
+        >
           {statusLabel[status] ?? status}
         </span>
       </div>
 
-      {/* Body */}
       <div style={{ padding: "12px 14px" }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <span style={{ fontSize: "22px", fontWeight: 500 }}>
-            R$ {Number(proposta.valor_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </span>
-          <span style={{ fontSize: "15px", color: "#888" }}>{proposta.horas}h</span>
+        <div style={{ display: "grid", gap: 8 }}>
+          <p style={{ fontSize: "13px", color: "#777", margin: 0, lineHeight: 1.4 }}>{senderLabel}</p>
+          {isContraproposta && (
+            <p
+              style={{
+                display: "inline-flex",
+                width: "fit-content",
+                alignItems: "center",
+                gap: 6,
+                fontSize: "12px",
+                color: probarBlue,
+                background: "#F1F6FB",
+                border: "0.5px solid #C8DBEE",
+                borderRadius: "20px",
+                padding: "4px 9px",
+                margin: 0,
+                fontWeight: 600,
+              }}
+            >
+              <RotateCcw size={13} />
+              Resposta a proposta anterior
+            </p>
+          )}
         </div>
 
-        <p style={{ fontSize: "14px", color: "#888", marginTop: "6px", lineHeight: 1.5 }}>
-          {proposta.tipo === "inicial"
-            ? "Proposta inicial para o evento"
-            : proposta.tipo === "adicional"
-            ? "Proposta com valor adicional"
-            : proposta.tipo === "desconto"
-            ? "Proposta com desconto"
-            : "Contraproposta enviada"}
-        </p>
-        <p style={{ fontSize: "13px", color: "#aaa", marginTop: "4px" }}>
-          De: {isMinhaProposta ? "Você" : "Outro participante"}
-        </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1.3fr) minmax(78px, 0.7fr)",
+            gap: 10,
+            alignItems: "stretch",
+            marginTop: 12,
+          }}
+        >
+          <Metric label="Valor total" value={`R$ ${money(proposta.valor_total)}`} strong />
+          <Metric label="Horas" value={`${proposta.horas}h`} />
+        </div>
 
-        {/* Ações condicionais */}
-        {isPendente && (
-          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+        {(desconto > 0 || adicional > 0) && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 9 }}>
+            {desconto > 0 && <Pill tone="discount" label={`Desconto de R$ ${money(desconto)}`} />}
+            {adicional > 0 && <Pill tone="additional" label={`Adicional de R$ ${money(adicional)}`} />}
+          </div>
+        )}
+
+        {hasCurrentUser && isPendente && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "13px" }}>
             {isMinhaProposta ? (
-              // Quem enviou só pode cancelar
-              <button
-                onClick={() => onCancelar?.(proposta.id)}
-                style={btnStyle("cancel")}
-              >
+              <button type="button" onClick={() => onCancelar?.(proposta.id)} style={btnStyle("cancel")}>
+                <Ban size={15} />
                 Cancelar proposta
               </button>
             ) : (
-              // Quem recebeu pode aceitar, recusar ou contraproposta
               <>
-                <button onClick={() => onRecusar?.(proposta.id)} style={btnStyle("reject")}>
-                  Recusar
+                <button type="button" onClick={() => onAceitar?.(proposta.id)} style={btnStyle("accept")}>
+                  <Check size={15} />
+                  Aceitar
                 </button>
-                <button onClick={() => onCounter?.(proposta.id)} style={btnStyle("default")}>
+                <button type="button" onClick={() => onCounter?.(proposta.id)} style={btnStyle("default")}>
+                  <RotateCcw size={15} />
                   Contraproposta
                 </button>
-                <button onClick={() => onAceitar?.(proposta.id)} style={btnStyle("accept")}>
-                  Aceitar
+                <button type="button" onClick={() => onRecusar?.(proposta.id)} style={btnStyle("reject")}>
+                  <X size={15} />
+                  Recusar
                 </button>
               </>
             )}
@@ -130,23 +192,17 @@ export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, on
         )}
 
         {status === "ACEITA" && (
-          <p style={{ fontSize: "14px", color: "#3B6D11", marginTop: "10px" }}>
-            Proposta aceita. Aguardando pagamento.
-          </p>
+          <p style={{ fontSize: "13px", color: "#5F5E5A", margin: "10px 0 0" }}>Proposta aceita.</p>
         )}
         {status === "RECUSADA" && (
-          <p style={{ fontSize: "14px", color: "#A32D2D", marginTop: "10px" }}>
-            Proposta recusada.
-          </p>
+          <p style={{ fontSize: "14px", color: "#A32D2D", margin: "10px 0 0" }}>Proposta recusada.</p>
         )}
         {status === "CANCELADA" && (
-          <p style={{ fontSize: "14px", color: "#888", marginTop: "10px" }}>
-            Proposta cancelada.
-          </p>
+          <p style={{ fontSize: "14px", color: "#777", margin: "10px 0 0" }}>Proposta cancelada.</p>
         )}
         {status === "SUBSTITUIDA" && (
-          <p style={{ fontSize: "14px", color: "#185FA5", marginTop: "10px" }}>
-            Proposta substituída por nova versão.
+          <p style={{ fontSize: "14px", color: probarBlue, margin: "10px 0 0" }}>
+            Proposta substituida por nova versao.
           </p>
         )}
       </div>
@@ -154,13 +210,91 @@ export function PropostaCard({ proposta, currentUserId, onAceitar, onRecusar, on
   )
 }
 
+function Metric({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 3,
+        background: "#FAFAFA",
+        border: "0.5px solid #eee",
+        borderRadius: "9px",
+        padding: "9px 10px",
+        minWidth: 0,
+      }}
+    >
+      <span style={{ fontSize: "11px", color: "#999", fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
+      <span
+        style={{
+          fontSize: strong ? "20px" : "16px",
+          fontWeight: strong ? 700 : 600,
+          color: "#1a1a1a",
+          lineHeight: 1.2,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function Pill({ label, tone }: { label: string; tone: "discount" | "additional" }) {
+  const isDiscount = tone === "discount"
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        width: "fit-content",
+        fontSize: "12px",
+        fontWeight: 600,
+        borderRadius: "20px",
+        padding: "4px 9px",
+        background: isDiscount ? "#F4FAEC" : "#F1F6FB",
+        color: isDiscount ? "#3B6D11" : probarBlue,
+        border: isDiscount ? "0.5px solid #B7D987" : "0.5px solid #C8DBEE",
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
 function btnStyle(variant: "default" | "accept" | "reject" | "cancel"): React.CSSProperties {
   const base: React.CSSProperties = {
-    flex: 1, padding: "7px 0", borderRadius: "8px",
-    fontSize: "14px", fontWeight: 500, cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 38,
+    padding: "8px 10px",
+    borderRadius: "8px",
+    fontSize: "13px",
+    lineHeight: 1.2,
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "normal",
+    textAlign: "center",
+    boxSizing: "border-box",
   }
-  if (variant === "accept")  return { ...base, background: "#F5C518", border: "0.5px solid #EF9F27", color: "#1a1a1a" }
-  if (variant === "reject")  return { ...base, background: "#fff",    border: "0.5px solid #E24B4A", color: "#A32D2D" }
-  if (variant === "cancel")  return { ...base, background: "#f5f5f5", border: "0.5px solid #ddd",    color: "#888" }
+  if (variant === "accept") {
+    return {
+      ...base,
+      gridColumn: "1 / -1",
+      background: probarYellow,
+      border: `0.5px solid ${probarYellowBorder}`,
+      color: "#1a1a1a",
+    }
+  }
+  if (variant === "reject") return { ...base, background: "#fff", border: "0.5px solid #E24B4A", color: "#A32D2D" }
+  if (variant === "cancel") {
+    return {
+      ...base,
+      gridColumn: "1 / -1",
+      background: "#f5f5f5",
+      border: "0.5px solid #ddd",
+      color: "#777",
+    }
+  }
   return { ...base, background: "#fff", border: "0.5px solid #ddd", color: "#333" }
 }

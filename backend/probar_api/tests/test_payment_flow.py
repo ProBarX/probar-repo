@@ -112,6 +112,62 @@ def test_criar_pagamento_seguro_inclui_fee_e_metodo_stripe(monkeypatch, settings
 
 
 @pytest.mark.django_db
+def test_confirmar_pagamento_autorizado_sincroniza_requires_capture(monkeypatch):
+    pedido, cliente_user = _create_pedido()
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=Decimal("100.00"),
+        status=PagamentoStatus.PENDENTE,
+        stripe_payment_intent_id="pi_autorizado",
+    )
+
+    def fake_retrieve(payment_intent_id):
+        assert payment_intent_id == "pi_autorizado"
+        return DummyIntent(intent_id=payment_intent_id, status="requires_capture")
+
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
+
+    client = APIClient()
+    client.force_authenticate(cliente_user)
+    response = client.post(f"/api/v1/stripe/pagamento-autorizado/{pagamento.id}/")
+
+    assert response.status_code == 200, response.data
+    pagamento.refresh_from_db()
+    assert pagamento.status == PagamentoStatus.PENDENTE
+    assert pagamento.finalizado_pelo_cliente is True
+    assert response.data["stripe_status"] == "requires_capture"
+    assert response.data["finalizado_pelo_cliente"] is True
+
+
+@pytest.mark.django_db
+def test_confirmar_pagamento_autorizado_nao_marca_pago_quando_intent_succeeded(monkeypatch):
+    pedido, cliente_user = _create_pedido()
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=Decimal("100.00"),
+        status=PagamentoStatus.PENDENTE,
+        stripe_payment_intent_id="pi_succeeded_antes_presenca",
+    )
+
+    def fake_retrieve(payment_intent_id):
+        assert payment_intent_id == "pi_succeeded_antes_presenca"
+        return DummyIntent(intent_id=payment_intent_id, status="succeeded")
+
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
+
+    client = APIClient()
+    client.force_authenticate(cliente_user)
+    response = client.post(f"/api/v1/stripe/pagamento-autorizado/{pagamento.id}/")
+
+    assert response.status_code == 400, response.data
+    pagamento.refresh_from_db()
+    pedido.refresh_from_db()
+    assert pagamento.status == PagamentoStatus.PENDENTE
+    assert pagamento.finalizado_pelo_cliente is False
+    assert pedido.status == PedidoStatus.ACEITO
+
+
+@pytest.mark.django_db
 def test_criar_pagamento_seguro_bloqueia_onboarding_incompleto():
     pedido, cliente_user = _create_pedido(onboarding=False)
 

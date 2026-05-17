@@ -432,6 +432,48 @@ def sincronizar_setup_pagamento(pagamento, setup_intent=None):
     return pagamento, setup_intent
 
 
+def sincronizar_payment_intent_autorizado(pagamento, intent=None):
+    if not pagamento.stripe_payment_intent_id:
+        raise ValueError("Pagamento sem PaymentIntent")
+
+    if not intent:
+        intent = stripe.PaymentIntent.retrieve(
+            pagamento.stripe_payment_intent_id
+        )
+
+    status = _stripe_attr(intent, "status")
+    metodo_stripe = _extrair_metodo_pagamento_stripe(intent)
+    update_fields = []
+
+    if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
+        pagamento.stripe_payment_method_type = metodo_stripe
+        update_fields.append("stripe_payment_method_type")
+
+    if status == "requires_capture":
+        if not pagamento.finalizado_pelo_cliente:
+            pagamento.finalizado_pelo_cliente = True
+            update_fields.append("finalizado_pelo_cliente")
+
+        if update_fields:
+            pagamento.save(update_fields=update_fields)
+
+        return pagamento, intent
+
+    if update_fields:
+        pagamento.save(update_fields=update_fields)
+
+    if status == "succeeded":
+        raise ValueError(
+            "PaymentIntent ja foi capturado; use o fluxo de liberacao para sincronizar o pagamento"
+        )
+
+    if status == "canceled":
+        marcar_pagamento_cancelado(pagamento)
+        return pagamento, intent
+
+    raise ValueError("Pagamento ainda nao autorizado")
+
+
 def criar_intent_com_payment_method_salvo(pagamento, *, idempotency_key=None):
     pagamento, _ = sincronizar_setup_pagamento(pagamento)
 

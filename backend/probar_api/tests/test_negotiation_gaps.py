@@ -4,10 +4,20 @@ from uuid import uuid4
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core.enums import MensagemTipo, PedidoStatus, PropostaStatus, TipoUsuario
-from core.models import Bartender, Chat, Cliente, Evento, Mensagem, Pedido, Proposta, User
+from core.enums import (
+    MensagemTipo,
+    PagamentoStatus,
+    PedidoStatus,
+    PresencaStatus,
+    PropostaStatus,
+    SolicitacaoReembolsoStatus,
+    SolicitacaoReembolsoTipo,
+    TipoUsuario,
+)
+from core.models import Bartender, Chat, Cliente, Evento, Mensagem, Pagamento, Pedido, Proposta, SolicitacaoReembolso, User
 
 
 def _criar_pedido_com_proposta_inicial():
@@ -80,6 +90,263 @@ def test_pedido_criado_com_mensagens_iniciais_do_chat():
     assert mensagens[2].tipo == MensagemTipo.CARD_PROPOSTA
     assert mensagens[0].payload['evento_id'] == evento.id
     assert mensagens[2].payload['pedido_id'] == pedido.id
+
+
+@pytest.mark.django_db
+def test_chat_api_nao_permite_criacao_manual():
+    pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+
+    response = api_cliente.post('/api/v1/chats/', data={'pedido': pedido.id}, format='json')
+
+    assert response.status_code == 405
+    assert Chat.objects.filter(pedido=pedido).count() == 1
+
+
+@pytest.mark.django_db
+def test_chat_api_filtra_por_pedido_e_ordena_por_mensagem_mais_recente():
+    cliente_user = User.objects.create_user(email=f'cliente+{uuid4().hex}@example.com', password='pass', tipo=TipoUsuario.CLIENTE)
+    bartender_user = User.objects.create_user(email=f'bartender+{uuid4().hex}@example.com', password='pass', tipo=TipoUsuario.BARTENDER)
+
+    cliente, _ = Cliente.objects.get_or_create(user=cliente_user)
+    bartender, _ = Bartender.objects.get_or_create(user=bartender_user)
+    bartender.valor_hora = Decimal('100.00')
+    bartender.save()
+
+    evento_1 = Evento.objects.create(
+        cliente=cliente,
+        nome='Evento antigo',
+        data=datetime.date.today(),
+        hora_inicio=datetime.time(18, 0),
+        hora_fim=datetime.time(22, 0),
+        quantidade_convidados=30,
+    )
+    evento_2 = Evento.objects.create(
+        cliente=cliente,
+        nome='Evento novo',
+        data=datetime.date.today(),
+        hora_inicio=datetime.time(19, 0),
+        hora_fim=datetime.time(23, 0),
+        quantidade_convidados=40,
+    )
+
+    api_cliente = APIClient()
+    api_cliente.force_authenticate(user=cliente_user)
+
+    response_1 = api_cliente.post('/api/v1/pedidos/', data={'bartender': bartender.user.id, 'evento': evento_1.id, 'horas': 2}, format='json')
+    response_2 = api_cliente.post('/api/v1/pedidos/', data={'bartender': bartender.user.id, 'evento': evento_2.id, 'horas': 2}, format='json')
+    assert response_1.status_code == 201, response_1.data
+    assert response_2.status_code == 201, response_2.data
+
+    pedido_1 = Pedido.objects.get(pk=response_1.data['id'])
+    pedido_2 = Pedido.objects.get(pk=response_2.data['id'])
+    chat_1 = Chat.objects.get(pedido=pedido_1)
+
+    mensagem_recente = Mensagem.objects.create(
+        chat=chat_1,
+        remetente=cliente_user,
+        tipo=MensagemTipo.TEXTO,
+        conteudo='Mensagem mais recente',
+    )
+    Mensagem.objects.filter(pk=mensagem_recente.pk).update(
+        criado_em=timezone.now() + datetime.timedelta(minutes=5)
+    )
+
+    response = api_cliente.get('/api/v1/chats/')
+    assert response.status_code == 200, response.data
+    results = response.data['results'] if isinstance(response.data, dict) else response.data
+    assert results[0]['pedido'] == pedido_1.id
+
+    response_filtrado = api_cliente.get(f'/api/v1/chats/?pedido={pedido_2.id}')
+    assert response_filtrado.status_code == 200, response_filtrado.data
+    results_filtrado = response_filtrado.data['results'] if isinstance(response_filtrado.data, dict) else response_filtrado.data
+    assert [chat['pedido'] for chat in results_filtrado] == [pedido_2.id]
+
+
+@pytest.mark.django_db
+def test_chat_api_retorna_pedido_resumo_com_status_reais():
+    pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=Decimal('200.00'),
+        status=PagamentoStatus.PENDENTE,
+        finalizado_pelo_cliente=True,
+    )
+    pedido.presenca_status = PresencaStatus.AUSENTE
+    pedido.presenca_origem = 'CLIENTE'
+    pedido.save(update_fields=['presenca_status', 'presenca_origem', 'atualizado_em'])
+    SolicitacaoReembolso.objects.create(
+        pedido=pedido,
+        pagamento=pagamento,
+        cliente=pedido.cliente,
+        bartender=pedido.bartender,
+        tipo=SolicitacaoReembolsoTipo.CANCELAMENTO_AUTORIZACAO,
+        status=SolicitacaoReembolsoStatus.ABERTA,
+        valor_solicitado=Decimal('200.00'),
+    )
+
+    response = api_cliente.get(f'/api/v1/chats/?pedido={pedido.id}')
+
+    assert response.status_code == 200, response.data
+    results = response.data['results'] if isinstance(response.data, dict) else response.data
+    chat_data = results[0]
+    assert 'cliente_foto_perfil' in chat_data
+    assert 'bartender_foto_perfil' in chat_data
+    assert chat_data['evento_nome'] == pedido.evento.nome
+    assert chat_data['evento_data']
+    assert chat_data['evento_hora_inicio']
+    assert chat_data['evento_hora_fim']
+    assert chat_data['evento_quantidade_convidados'] == pedido.evento.quantidade_convidados
+
+    resumo = chat_data['pedido_resumo']
+    assert resumo['pedido_id'] == pedido.id
+    assert resumo['numero_bartender'] == pedido.numero_bartender
+    assert resumo['pedido_status'] == PedidoStatus.EM_NEGOCIACAO
+    assert resumo['pagamento_status'] == PagamentoStatus.PENDENTE
+    assert resumo['pagamento_finalizado_pelo_cliente'] is True
+    assert resumo['presenca_status'] == PresencaStatus.AUSENTE
+    assert resumo['presenca_origem'] == 'CLIENTE'
+    assert resumo['servico_fim_previsto']
+    assert resumo['liberacao_automatica_em']
+    assert resumo['solicitacao_reembolso_status'] == SolicitacaoReembolsoStatus.ABERTA
+    assert resumo['solicitacao_reembolso_tipo'] == SolicitacaoReembolsoTipo.CANCELAMENTO_AUTORIZACAO
+
+
+@pytest.mark.django_db
+def test_participante_pode_enviar_apenas_mensagem_texto():
+    pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+    chat = Chat.objects.get(pedido=pedido)
+
+    response = api_cliente.post(
+        '/api/v1/mensagens/',
+        data={'chat': chat.id, 'tipo': MensagemTipo.TEXTO, 'conteudo': 'Oi, tudo certo?'},
+        format='json',
+    )
+
+    assert response.status_code == 201, response.data
+    mensagem = Mensagem.objects.get(pk=response.data['id'])
+    assert mensagem.chat == chat
+    assert mensagem.remetente == pedido.cliente.user
+    assert mensagem.tipo == MensagemTipo.TEXTO
+    assert mensagem.conteudo == 'Oi, tudo certo?'
+    assert mensagem.payload is None
+
+
+@pytest.mark.django_db
+def test_usuario_nao_participante_nao_envia_mensagem_em_chat_de_terceiros():
+    pedido, _, _, _ = _criar_pedido_com_proposta_inicial()
+    chat = Chat.objects.get(pedido=pedido)
+    outsider_user = User.objects.create_user(
+        email=f'outsider+{uuid4().hex}@example.com',
+        password='pass',
+        tipo=TipoUsuario.CLIENTE,
+    )
+    api_outsider = APIClient()
+    api_outsider.force_authenticate(user=outsider_user)
+
+    response = api_outsider.post(
+        '/api/v1/mensagens/',
+        data={'chat': chat.id, 'tipo': MensagemTipo.TEXTO, 'conteudo': 'Mensagem indevida'},
+        format='json',
+    )
+
+    assert response.status_code == 403
+    assert not Mensagem.objects.filter(chat=chat, conteudo='Mensagem indevida').exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    'tipo_sistemico',
+    [MensagemTipo.STATUS_UPDATE, MensagemTipo.CARD_PROPOSTA, MensagemTipo.CARD_EVENTO],
+)
+def test_api_nao_permite_criar_mensagem_sistemica_manualmente(tipo_sistemico):
+    pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+    chat = Chat.objects.get(pedido=pedido)
+
+    response = api_cliente.post(
+        '/api/v1/mensagens/',
+        data={
+            'chat': chat.id,
+            'tipo': tipo_sistemico,
+            'conteudo': 'Sistema falso',
+            'payload': {'pedido_id': pedido.id},
+        },
+        format='json',
+    )
+
+    assert response.status_code == 400
+    assert not Mensagem.objects.filter(chat=chat, conteudo='Sistema falso').exists()
+
+
+@pytest.mark.django_db
+def test_api_nao_permite_payload_em_mensagem_manual():
+    pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+    chat = Chat.objects.get(pedido=pedido)
+
+    response = api_cliente.post(
+        '/api/v1/mensagens/',
+        data={
+            'chat': chat.id,
+            'tipo': MensagemTipo.TEXTO,
+            'conteudo': 'Texto com payload',
+            'payload': {'admin': True},
+        },
+        format='json',
+    )
+
+    assert response.status_code == 400
+    assert not Mensagem.objects.filter(chat=chat, conteudo='Texto com payload').exists()
+
+
+@pytest.mark.django_db
+def test_api_bloqueia_edicao_e_exclusao_de_mensagens():
+    pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+    chat = Chat.objects.get(pedido=pedido)
+    mensagem = Mensagem.objects.create(
+        chat=chat,
+        remetente=pedido.cliente.user,
+        tipo=MensagemTipo.TEXTO,
+        conteudo='Mensagem original',
+    )
+
+    patch_response = api_cliente.patch(
+        f'/api/v1/mensagens/{mensagem.id}/',
+        data={'conteudo': 'Alterada'},
+        format='json',
+    )
+    delete_response = api_cliente.delete(f'/api/v1/mensagens/{mensagem.id}/')
+
+    mensagem.refresh_from_db()
+    assert patch_response.status_code == 405
+    assert delete_response.status_code == 405
+    assert mensagem.conteudo == 'Mensagem original'
+
+
+@pytest.mark.django_db
+def test_nao_participante_nao_cria_proposta_em_pedido_de_terceiros():
+    pedido, _, _, _ = _criar_pedido_com_proposta_inicial()
+    outsider_user = User.objects.create_user(
+        email=f'outsider+{uuid4().hex}@example.com',
+        password='pass',
+        tipo=TipoUsuario.CLIENTE,
+    )
+    api_outsider = APIClient()
+    api_outsider.force_authenticate(user=outsider_user)
+
+    response = api_outsider.post(
+        '/api/v1/propostas/',
+        data={
+            'pedido': pedido.id,
+            'tipo': 'inicial',
+            'horas': 4,
+            'valor_adicional': '0.00',
+            'desconto': '0.00',
+        },
+        format='json',
+    )
+
+    assert response.status_code == 403
+    assert not Proposta.objects.filter(pedido=pedido, remetente=outsider_user).exists()
 
 
 @pytest.mark.django_db
