@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import timedelta
 import os
+import sys
 import environ
 import dj_database_url
 
@@ -83,13 +84,45 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Documentação da API oficial do ProBar - Sistema para intermediar clientes e bartenders.',
     'VERSION': '1.0.0',
 
-    'SWAGGER_UI_SETTINGS': {
-        'deepLinking': True,
-        'displayOperationId': False,
-        'defaultModelsExpandDepth': -1,  
-        'defaultModelExpandDepth': 2,
-        'persistAuthorization': True,
-    },
+    'SWAGGER_UI_SETTINGS': """
+    {
+        deepLinking: true,
+        displayOperationId: false,
+        defaultModelsExpandDepth: -1,
+        defaultModelExpandDepth: 2,
+        persistAuthorization: true,
+        tagsSorter: (a, b) => {
+            const order = [
+                "Autenticação",
+                "Autenticação via Google",
+                "Usuários",
+                "Clientes",
+                "Bartenders",
+                "Drinks",
+                "Eventos",
+                "Pedidos",
+                "Pagamentos - Onboarding Stripe",
+                "Pagamentos - Stripe",
+                "Pagamentos - Webhooks Stripe",
+                "Chats",
+                "Propostas",
+                "Mensagens",
+                "Documentos Legais",
+                "Aceites de Documentos Legais",
+            ];
+            const indexA = order.indexOf(a);
+            const indexB = order.indexOf(b);
+            const valueA = indexA === -1 ? order.length : indexA;
+            const valueB = indexB === -1 ? order.length : indexB;
+
+            if (valueA === valueB) {
+                return a.localeCompare(b);
+            }
+
+            return valueA - valueB;
+        },
+    }
+    """,
 
     'SWAGGER_UI_DIST': 'SIDECAR',  
 
@@ -103,11 +136,14 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Drinks'},
         {'name': 'Eventos'},
         {'name': 'Pedidos'},
+        {'name': 'Pagamentos - Onboarding Stripe'},
+        {'name': 'Pagamentos - Stripe'},
+        {'name': 'Pagamentos - Webhooks Stripe'},
         {'name': 'Chats'},
         {'name': 'Propostas'},
         {'name': 'Mensagens'},
-        {'name': 'Termos'},
-        {'name': 'Aceite Termos'},
+        {'name': 'Documentos Legais'},
+        {'name': 'Aceites de Documentos Legais'},
     ],
 }
 
@@ -187,5 +223,83 @@ STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+SUPABASE_STORAGE_BUCKET = env("SUPABASE_STORAGE_BUCKET", default="")
+SUPABASE_S3_ENDPOINT = env("SUPABASE_S3_ENDPOINT", default="")
+SUPABASE_S3_REGION = env("SUPABASE_S3_REGION", default="")
+SUPABASE_S3_ACCESS_KEY_ID = env("SUPABASE_S3_ACCESS_KEY_ID", default="")
+SUPABASE_S3_SECRET_ACCESS_KEY = env("SUPABASE_S3_SECRET_ACCESS_KEY", default="")
+SUPABASE_PUBLIC_STORAGE_URL = env("SUPABASE_PUBLIC_STORAGE_URL", default="")
+USE_SUPABASE_STORAGE = env.bool(
+    "USE_SUPABASE_STORAGE",
+    default=all(
+        [
+            SUPABASE_STORAGE_BUCKET,
+            SUPABASE_S3_ENDPOINT,
+            SUPABASE_S3_REGION,
+            SUPABASE_S3_ACCESS_KEY_ID,
+            SUPABASE_S3_SECRET_ACCESS_KEY,
+            SUPABASE_PUBLIC_STORAGE_URL,
+        ]
+    ),
+)
+
+if USE_SUPABASE_STORAGE:
+    missing_supabase_storage_settings = [
+        name
+        for name, value in {
+            "SUPABASE_STORAGE_BUCKET": SUPABASE_STORAGE_BUCKET,
+            "SUPABASE_S3_ENDPOINT": SUPABASE_S3_ENDPOINT,
+            "SUPABASE_S3_REGION": SUPABASE_S3_REGION,
+            "SUPABASE_S3_ACCESS_KEY_ID": SUPABASE_S3_ACCESS_KEY_ID,
+            "SUPABASE_S3_SECRET_ACCESS_KEY": SUPABASE_S3_SECRET_ACCESS_KEY,
+            "SUPABASE_PUBLIC_STORAGE_URL": SUPABASE_PUBLIC_STORAGE_URL,
+        }.items()
+        if not value
+    ]
+    if missing_supabase_storage_settings:
+        raise RuntimeError(
+            "Supabase Storage esta habilitado, mas faltam variaveis: "
+            + ", ".join(missing_supabase_storage_settings)
+        )
+
+    MEDIA_URL = f"{SUPABASE_PUBLIC_STORAGE_URL.rstrip('/')}/"
+
+    STORAGES = {
+        "default": {
+            "BACKEND": "core.storage_backends.SupabaseMediaStorage",
+            "OPTIONS": {
+                "bucket_name": SUPABASE_STORAGE_BUCKET,
+                "endpoint_url": SUPABASE_S3_ENDPOINT,
+                "region_name": SUPABASE_S3_REGION,
+                "access_key": SUPABASE_S3_ACCESS_KEY_ID,
+                "secret_key": SUPABASE_S3_SECRET_ACCESS_KEY,
+                "addressing_style": "path",
+                "signature_version": "s3v4",
+                "file_overwrite": False,
+                "querystring_auth": False,
+                "default_acl": None,
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+
+LOCAL_HOSTS = {"127.0.0.1", "localhost"}
+IS_LOCAL_DEVELOPMENT = any(host in LOCAL_HOSTS for host in ALLOWED_HOSTS)
+SERVE_MEDIA_FILES = env.bool(
+    "SERVE_MEDIA_FILES",
+    default=not USE_SUPABASE_STORAGE and (DEBUG or "runserver" in sys.argv or IS_LOCAL_DEVELOPMENT),
+)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

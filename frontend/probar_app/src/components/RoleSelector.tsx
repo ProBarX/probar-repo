@@ -1,6 +1,7 @@
 "use client"
 import React from "react"
 import * as Icons from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 
 type Role = "cliente" | "bartender"
 
@@ -20,14 +21,14 @@ export function RoleSelector({ role, title, subtitle, selected = false, disabled
   const classes = `${base} ${selectedClasses} ${disabledClasses}`
 
   const iconName = role === "cliente" ? "User" : "Wine"
-  const IconComp = (Icons as any)[iconName] || (Icons as any)["User"]
+  const IconComp = (Icons[iconName as keyof typeof Icons] as LucideIcon) || (Icons.User as LucideIcon)
 
   return (
     <button
       type="button"
       data-testid={`role-selector-${role}`}
       onClick={() => !disabled && onSelect(role)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') !disabled && onSelect(role) }}
+      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !disabled) onSelect(role) }}
       className={classes}
     >
       <IconComp className="h-5 w-5 text-[#F5C518] flex-shrink-0" />

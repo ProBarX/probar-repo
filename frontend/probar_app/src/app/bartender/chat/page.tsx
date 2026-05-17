@@ -1,11 +1,19 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, type UIEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { AlertCircle, ArrowLeft, MessageCircle, Send, X } from "lucide-react"
 import { PropostaCard, type Proposta } from "@/components/client/chat/PropostaCard"
 import { CounterPropostaForm } from "@/components/client/chat/CounterPropostaForm"
+import { ChatAvatar } from "@/components/client/chat/ChatAvatar"
+import { ChatEventoCard, type EventoChatDetails } from "@/components/client/chat/ChatEventoCard"
+import { ChatNextStepBanner } from "@/components/client/chat/ChatNextStepBanner"
+import { ChatStatusBadge } from "@/components/client/chat/ChatStatusBadge"
+import { ChatSystemMessage } from "@/components/client/chat/ChatSystemMessage"
+import { chatCardContainerStyle } from "@/components/client/chat/chatStyles"
+import { useIsCompactChat } from "@/components/client/chat/useIsCompactChat"
 import { useChat, type Chat, type Mensagem } from "@/services/useChat"
-import { api } from "@/services/api"
+import { getPedidoDisplayNumber, resolvePedidoVisualStatus } from "@/lib/chat-status"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -14,17 +22,12 @@ type ChatEnriquecido = Chat & {
   evento_nome: string
 }
 
-type PedidoResumo = {
-  id: number
-  cliente_nome?: string
-  evento_nome?: string
-}
-
 type PropostaPayload = {
   proposta_id?: number
   pedido_id?: number
   remetente?: number
   tipo?: string
+  valor_hora?: string | number
   horas?: number
   valor_adicional?: string | number
   desconto?: string | number
@@ -37,6 +40,10 @@ type EventoPayload = {
   data?: string
   hora_inicio?: string
   hora_fim?: string
+  cep?: string
+  rua?: string
+  numero?: string
+  complemento?: string
   quantidade_convidados?: number
   descricao_evento?: string
 }
@@ -44,8 +51,9 @@ type EventoPayload = {
 const avatarColors = ["#3C3489", "#0F6E56", "#993C1D", "#185FA5", "#854F0B"]
 const CHAT_HEADER_HEIGHT = 69
 
-function getResults<T>(data: T[] | { results?: T[] }): T[] {
-  return Array.isArray(data) ? data : data.results ?? []
+function parsePedidoParam(value: string | null) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 function getPropostaPayload(payload: Mensagem["payload"]): PropostaPayload | null {
@@ -54,6 +62,21 @@ function getPropostaPayload(payload: Mensagem["payload"]): PropostaPayload | nul
 
 function getEventoPayload(payload: Mensagem["payload"]): EventoPayload | null {
   return payload ? (payload as EventoPayload) : null
+}
+
+function getEventoDetails(payload: EventoPayload | null, chat?: Chat): EventoChatDetails {
+  return {
+    nome: payload?.nome ?? chat?.evento_nome,
+    data: payload?.data ?? chat?.evento_data,
+    hora_inicio: payload?.hora_inicio ?? chat?.evento_hora_inicio,
+    hora_fim: payload?.hora_fim ?? chat?.evento_hora_fim,
+    cep: payload?.cep ?? chat?.evento_cep,
+    rua: payload?.rua ?? chat?.evento_rua,
+    numero: payload?.numero ?? chat?.evento_numero,
+    complemento: payload?.complemento ?? chat?.evento_complemento,
+    quantidade_convidados: payload?.quantidade_convidados ?? chat?.evento_quantidade_convidados,
+    descricao_evento: payload?.descricao_evento ?? chat?.evento_descricao,
+  }
 }
 
 function toNumber(value: unknown, fallback = 0) {
@@ -79,6 +102,48 @@ function toPropostaStatus(status: unknown): Proposta["status"] {
   return "PENDENTE"
 }
 
+function getPendingProposalAction(mensagens: Mensagem[], currentUserId: number): "self" | "other" | null {
+  if (!currentUserId) return null
+  const pendingMessage = [...mensagens].reverse().find((m) => {
+    const payload = getPropostaPayload(m.payload)
+    return m.tipo === "card_proposta" && payload?.status === "PENDENTE"
+  })
+  const payload = pendingMessage ? getPropostaPayload(pendingMessage.payload) : null
+  if (!payload?.remetente) return null
+  return Number(payload.remetente) === Number(currentUserId) ? "other" : "self"
+}
+
+function getActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && !error.message.startsWith("API error")) return error.message
+  return fallback
+}
+
+function mergeMessages(existing: Mensagem[], incoming: Mensagem[]) {
+  const byId = new Map<number, Mensagem>()
+  existing.forEach((msg) => byId.set(msg.id, msg))
+  incoming.forEach((msg) => byId.set(msg.id, msg))
+
+  return [...byId.values()].sort((a, b) => {
+    const byDate = new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime()
+    return byDate !== 0 ? byDate : a.id - b.id
+  })
+}
+
+function mergeChatsById(existing: ChatEnriquecido[], incoming: ChatEnriquecido[]) {
+  const incomingById = new Map(incoming.map((chat) => [chat.id, chat]))
+  const existingIds = new Set(existing.map((chat) => chat.id))
+
+  return [
+    ...existing.map((chat) => {
+      const updated = incomingById.get(chat.id)
+      return updated
+        ? { ...chat, ...updated, mensagens: mergeMessages(chat.mensagens, updated.mensagens) }
+        : chat
+    }),
+    ...incoming.filter((chat) => !existingIds.has(chat.id)),
+  ]
+}
+
 async function getCurrentUserId(): Promise<number> {
   try {
     const res = await fetch("/api/auth/get-token")
@@ -96,9 +161,12 @@ async function getCurrentUserId(): Promise<number> {
 export default function BartenderChatPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isCompact = useIsCompactChat()
   const pedidoParam = searchParams.get("pedido")
+  const pedidoIdParam = parsePedidoParam(pedidoParam)
   const {
-    getChats,
+    getChatsPage,
+    getChat,
     getMensagens,
     enviarMensagem,
     aceitarProposta,
@@ -114,63 +182,157 @@ export default function BartenderChatPage() {
   const [texto, setTexto] = useState("")
   const [counterParaId, setCounterParaId] = useState<number | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
+  const [loadingMoreChats, setLoadingMoreChats] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [nextChatsPage, setNextChatsPage] = useState<number | null>(null)
+  const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(pedidoIdParam))
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const shouldStickToBottomRef = useRef(true)
+  const lastScrollStateRef = useRef<{ chatId: number | null; messageCount: number }>({
+    chatId: null,
+    messageCount: 0,
+  })
 
   useEffect(() => {
     getCurrentUserId().then(setCurrentUserId)
   }, [])
 
-  // Carrega chats e enriquece com cliente_nome e evento_nome do PedidoSerializer
+  useEffect(() => {
+    if (isCompact && pedidoIdParam) {
+      setMobileChatOpen(true)
+    }
+  }, [isCompact, pedidoIdParam])
+
+  useEffect(() => {
+    if (isCompact && !pedidoIdParam) {
+      setMobileChatOpen(false)
+    }
+  }, [isCompact, pedidoIdParam])
+
+  useEffect(() => {
+    const open = isCompact && mobileChatOpen
+    document.body.dataset.probarChatMobileOpen = open ? "true" : "false"
+    window.dispatchEvent(new CustomEvent("probar:chat-mobile-state", { detail: { open } }))
+  }, [isCompact, mobileChatOpen])
+
+  useEffect(() => {
+    return () => {
+      document.body.dataset.probarChatMobileOpen = "false"
+      window.dispatchEvent(new CustomEvent("probar:chat-mobile-state", { detail: { open: false } }))
+    }
+  }, [])
+
+  const enrichChats = useCallback((items: Chat[]): ChatEnriquecido[] => {
+    return items.map((chat) => ({
+      ...chat,
+      cliente_nome: chat.cliente_nome?.trim() || "Cliente",
+      evento_nome: chat.evento_nome ?? "",
+    }))
+  }, [])
+
+  // Carrega chats e preserva a paginacao da API.
   const carregarChats = useCallback(async () => {
     try {
-      const data = await getChats()
+      const pageData = await getChatsPage({ page: 1 })
+      let chatsData = pageData.results
 
-      const { data: pedidosRaw } = await api.get<PedidoResumo[] | { results?: PedidoResumo[] }>("/pedidos/")
-      const pedidos = getResults(pedidosRaw)
+      if (pedidoIdParam && !chatsData.some((chat) => chat.pedido === pedidoIdParam)) {
+        const chatDoPedido = await getChatsPage({ pedidoId: pedidoIdParam, page: 1 })
+        const idsDoPedido = new Set(chatDoPedido.results.map((chat) => chat.id))
+        chatsData = [
+          ...chatDoPedido.results,
+          ...chatsData.filter((chat) => !idsDoPedido.has(chat.id)),
+        ]
+      }
 
-      const enriquecidos: ChatEnriquecido[] = data.map((c) => {
-        const pedido = pedidos.find((p) => p.id === c.pedido)
-        const clienteNome = c.cliente_nome?.trim() || pedido?.cliente_nome?.trim() || "Cliente"
-        return {
-          ...c,
-          cliente_nome: clienteNome,
-          evento_nome: c.evento_nome ?? pedido?.evento_nome ?? "",
-        }
-      })
+      const enriquecidos = enrichChats(chatsData)
 
       setChats(enriquecidos)
+      setNextChatsPage(pageData.next ? 2 : null)
+      setSelectedIdx((current) => {
+        if (pedidoIdParam) {
+          const index = enriquecidos.findIndex((chat) => chat.pedido === pedidoIdParam)
+          if (index >= 0) return index
+        }
+        return current < enriquecidos.length ? current : 0
+      })
+      if (pedidoIdParam && enriquecidos.some((chat) => chat.pedido === pedidoIdParam)) {
+        setCounterParaId(null)
+      }
     } catch {
       setError("Não foi possível carregar as conversas.")
     } finally {
       setLoadingChats(false)
     }
-  }, [getChats])
+  }, [enrichChats, getChatsPage, pedidoIdParam])
+
+  const carregarMaisChats = useCallback(async () => {
+    if (!nextChatsPage || loadingMoreChats) return
+
+    setLoadingMoreChats(true)
+    try {
+      const pageData = await getChatsPage({ page: nextChatsPage })
+      const enriquecidos = enrichChats(pageData.results)
+      setChats((prev) => mergeChatsById(prev, enriquecidos))
+      setNextChatsPage(pageData.next ? nextChatsPage + 1 : null)
+    } catch {
+      setActionError("Nao foi possivel carregar conversas antigas.")
+    } finally {
+      setLoadingMoreChats(false)
+    }
+  }, [enrichChats, getChatsPage, loadingMoreChats, nextChatsPage])
+
+  const handleChatListScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (!nextChatsPage || loadingMoreChats) return
+
+      const element = event.currentTarget
+      const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+      if (distanceFromBottom < 120) {
+        void carregarMaisChats()
+      }
+    },
+    [carregarMaisChats, loadingMoreChats, nextChatsPage]
+  )
 
   useEffect(() => {
     carregarChats()
   }, [carregarChats])
 
-  useEffect(() => {
-    if (!pedidoParam || chats.length === 0) return
-
-    const pedidoId = Number(pedidoParam)
-    if (!Number.isFinite(pedidoId)) return
-
-    const index = chats.findIndex((chat) => chat.pedido === pedidoId)
-    if (index >= 0 && index !== selectedIdx) {
-      setSelectedIdx(index)
-      setCounterParaId(null)
-    }
-  }, [chats, pedidoParam, selectedIdx])
-
-  // Scroll automático
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [chats, selectedIdx])
-
   const selectedChatId = chats[selectedIdx]?.id
+  const selectedMessageCount = chats[selectedIdx]?.mensagens.length ?? 0
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" })
+  }, [])
+
+  const handleMessagesScroll = useCallback(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    shouldStickToBottomRef.current = distanceFromBottom < 96
+  }, [])
+
+  useEffect(() => {
+    if (!selectedChatId) return
+
+    const previous = lastScrollStateRef.current
+    const changedChat = previous.chatId !== selectedChatId
+    const hasNewMessage = selectedMessageCount > previous.messageCount
+
+    if (changedChat || (hasNewMessage && shouldStickToBottomRef.current)) {
+      requestAnimationFrame(() => scrollToBottom(changedChat ? "auto" : "smooth"))
+    }
+
+    lastScrollStateRef.current = {
+      chatId: selectedChatId,
+      messageCount: selectedMessageCount,
+    }
+  }, [selectedChatId, selectedMessageCount, scrollToBottom])
 
   // Polling de mensagens
   useEffect(() => {
@@ -178,9 +340,19 @@ export default function BartenderChatPage() {
 
     const poll = async () => {
       try {
-        const mensagens = await getMensagens(selectedChatId)
+        const chatAtualizado = await getChat(selectedChatId)
         setChats((prev) =>
-          prev.map((c) => (c.id === selectedChatId ? { ...c, mensagens } : c))
+          prev.map((c) =>
+            c.id === selectedChatId
+              ? {
+                  ...c,
+                  ...chatAtualizado,
+                  cliente_nome: chatAtualizado.cliente_nome?.trim() || c.cliente_nome,
+                  evento_nome: chatAtualizado.evento_nome ?? c.evento_nome,
+                  mensagens: mergeMessages(c.mensagens, chatAtualizado.mensagens),
+                }
+              : c
+          )
         )
       } catch {}
     }
@@ -190,7 +362,7 @@ export default function BartenderChatPage() {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
-  }, [getMensagens, selectedChatId])
+  }, [getChat, selectedChatId])
 
   // ── Ações de proposta ──────────────────────────────────────────────────────
 
@@ -217,40 +389,52 @@ export default function BartenderChatPage() {
   }
 
   const handleAceitar = async (id: number) => {
+    setActionError(null)
     try {
       await aceitarProposta(id)
       updatePropostaLocal(id, "ACEITA")
       // Bartender não paga — apenas aguarda o cliente efetuar o pagamento
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel aceitar a proposta. Atualize a conversa e tente novamente."))
+    }
   }
 
   const handleRecusar = async (id: number) => {
+    setActionError(null)
     try {
       await recusarProposta(id)
       updatePropostaLocal(id, "RECUSADA")
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel recusar a proposta."))
+    }
   }
 
   const handleCancelar = async (id: number) => {
+    setActionError(null)
     try {
       await cancelarProposta(id)
       updatePropostaLocal(id, "CANCELADA")
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel cancelar a proposta."))
+    }
   }
 
   const handleEnviarCounter = async (
     propostaId: number,
     dados: { horas: number; desconto?: number; valor_adicional?: number }
   ) => {
+    setActionError(null)
     try {
       await enviarContraproposta(propostaId, dados)
       updatePropostaLocal(propostaId, "SUBSTITUIDA")
       setCounterParaId(null)
       const mensagens = await getMensagens(chats[selectedIdx].id)
       setChats((prev) =>
-        prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens } : c))
+        prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens: mergeMessages(c.mensagens, mensagens) } : c))
       )
-    } catch {}
+    } catch (err) {
+      setActionError(getActionErrorMessage(err, "Nao foi possivel enviar a contraproposta."))
+    }
   }
 
   const handleEnviarTexto = async () => {
@@ -260,6 +444,7 @@ export default function BartenderChatPage() {
 
     const conteudo = texto.trim()
     setTexto("")
+    setActionError(null)
 
     const temp: Mensagem = {
       id: Date.now(),
@@ -278,7 +463,14 @@ export default function BartenderChatPage() {
     )
 
     try {
-      await enviarMensagem(chatId, conteudo)
+      const enviada = await enviarMensagem(chatId, conteudo)
+      setChats((prev) =>
+        prev.map((c, i) =>
+          i === selectedIdx
+            ? { ...c, mensagens: mergeMessages(c.mensagens.filter((m) => m.id !== temp.id), [enviada]) }
+            : c
+        )
+      )
     } catch {
       setChats((prev) =>
         prev.map((c, i) =>
@@ -288,6 +480,7 @@ export default function BartenderChatPage() {
         )
       )
       setTexto(conteudo)
+      setActionError("Nao foi possivel enviar a mensagem. Verifique a conexao e tente novamente.")
     }
   }
 
@@ -303,6 +496,7 @@ export default function BartenderChatPage() {
       pedido: p.pedido_id,
       remetente: p.remetente ?? 0,
       tipo: p.tipo ?? "inicial",
+      valor_hora: toNumber(p.valor_hora),
       horas: p.horas ?? 0,
       valor_adicional: String(p.valor_adicional ?? "0.00"),
       desconto: String(p.desconto ?? "0.00"),
@@ -324,12 +518,17 @@ export default function BartenderChatPage() {
   const renderMensagem = (msg: Mensagem) => {
     // const isOwn = msg.remetente !== null && msg.remetente === currentUserId
     const isOwn = Number(msg.remetente) === Number(currentUserId)
+    if (msg.tipo === "status_update" || (msg.tipo === "texto" && msg.remetente === null)) {
+      return <ChatSystemMessage key={msg.id} conteudo={msg.conteudo} criadoEm={msg.criado_em} />
+    }
+
     if (msg.tipo === "texto") {
       return (
         <div
           key={msg.id}
           style={{
-            maxWidth: "75%",
+            maxWidth: isCompact ? "86%" : "75%",
+            minWidth: 0,
             padding: "10px 12px 6px",
             borderRadius: "14px",
             fontSize: "15px",
@@ -344,6 +543,7 @@ export default function BartenderChatPage() {
             display: "flex",
             flexDirection: "column",
             gap: "4px",
+            overflowWrap: "anywhere",
           }}
         >
           <span>{msg.conteudo}</span>
@@ -365,10 +565,11 @@ export default function BartenderChatPage() {
     if (msg.tipo === "card_proposta") {
       const proposta = extractProposta(msg)
       if (!proposta) return null
+      const align = Number(proposta.remetente) === Number(currentUserId) ? "right" : "left"
       return (
         <div
           key={msg.id}
-          style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+          style={chatCardContainerStyle(align)}
         >
           <PropostaCard
             proposta={proposta}
@@ -383,8 +584,10 @@ export default function BartenderChatPage() {
           {counterParaId === proposta.id && (
             <CounterPropostaForm
               propostaId={proposta.id}
+              role="bartender"
               horasAtual={proposta.horas}
               valorAtual={proposta.valor_total}
+              valorHoraAtual={proposta.valor_hora}
               onEnviar={handleEnviarCounter}
               onCancelar={() => setCounterParaId(null)}
             />
@@ -395,63 +598,12 @@ export default function BartenderChatPage() {
 
     if (msg.tipo === "card_evento") {
       const p = getEventoPayload(msg.payload)
-      if (!p) return null
       return (
-        <div
+        <ChatEventoCard
           key={msg.id}
-          style={{
-            alignSelf: "center",
-            background: "#fff",
-            border: "1px solid #eee",
-            borderRadius: "12px",
-            padding: "12px 16px",
-            fontSize: "13px",
-            color: "#555",
-            maxWidth: "340px",
-            width: "100%",
-          }}
-        >
-          <p style={{ margin: "0 0 6px", fontWeight: 600, fontSize: "14px", color: "#1a1a1a" }}>
-            📅 {p.nome}
-          </p>
-          <p style={{ margin: 0, color: "#888" }}>
-            {p.data} · {p.hora_inicio?.slice(0, 5)} – {p.hora_fim?.slice(0, 5)}
-          </p>
-          <p style={{ margin: "4px 0 0", color: "#888" }}>
-            {p.quantidade_convidados} convidados
-          </p>
-          {p.descricao_evento && (
-            <p style={{ margin: "4px 0 0", color: "#aaa", fontSize: "12px" }}>
-              {p.descricao_evento}
-            </p>
-          )}
-        </div>
-      )
-    }
-
-    if (msg.tipo === "status_update") {
-      const isAceite = msg.conteudo?.toLowerCase().includes("aceita")
-      return (
-        <div
-          key={msg.id}
-          style={{
-            alignSelf: "center",
-            background: isAceite ? "#EAF3DE" : "#f5f5f5",
-            border: isAceite ? "1px solid #97C459" : "none",
-            borderRadius: "20px",
-            padding: "6px 16px",
-            fontSize: "12px",
-            color: isAceite ? "#3B6D11" : "#888",
-            fontWeight: isAceite ? 600 : 400,
-          }}
-        >
-          {msg.conteudo}
-          {isAceite && (
-            <p style={{ margin: "6px 0 0", fontSize: "11px", color: "#5a9a3a", fontWeight: 400 }}>
-              Aguardando pagamento do cliente.
-            </p>
-          )}
-        </div>
+          evento={getEventoDetails(p, chats[selectedIdx])}
+          align="left"
+        />
       )
     }
 
@@ -482,7 +634,7 @@ export default function BartenderChatPage() {
   if (chats.length === 0) {
     return (
       <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "#888", flexDirection: "column", gap: "16px" }}>
-        <div style={{ fontSize: "40px" }}>💬</div>
+        <MessageCircle size={40} color="#aaa" strokeWidth={1.8} />
         <p style={{ margin: 0, fontWeight: 600, fontSize: "16px" }}>Nenhuma negociação ainda</p>
         <p style={{ margin: 0, fontSize: "14px", color: "#aaa" }}>Quando um cliente te contratar, a conversa aparece aqui.</p>
         <button onClick={() => router.back()} style={{ padding: "10px 20px", background: "#F5C518", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: 600 }}>Voltar</button>
@@ -491,83 +643,189 @@ export default function BartenderChatPage() {
   }
 
   const conversa = chats[selectedIdx]
+  const showSidebar = !isCompact || !mobileChatOpen
+  const showConversation = !isCompact || mobileChatOpen
 
   return (
-    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden", fontFamily: "sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "row", height: "100%", width: "100%", overflow: "hidden", fontFamily: "sans-serif" }}>
 
       {/* Sidebar */}
-      <div style={{ width: 280, minWidth: 280, borderRight: "1px solid #eee", display: "flex", flexDirection: "column", background: "#fff" }}>
+      <div style={{ display: showSidebar ? "flex" : "none", width: isCompact ? "100%" : 280, minWidth: isCompact ? 0 : 280, height: "100%", borderRight: isCompact ? "none" : "1px solid #eee", borderBottom: "none", flexDirection: "column", background: "#fff", flex: isCompact ? 1 : undefined, flexShrink: 0 }}>
         <div style={{ height: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, padding: "16px 16px 14px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <span style={{ fontWeight: 600, fontSize: "15px" }}>Negociações</span>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ flex: 1, overflowY: "auto" }} onScroll={handleChatListScroll}>
           {chats.map((c, i) => {
             const ultima = c.mensagens.at(-1)
+            const pedidoNumero = getPedidoDisplayNumber(c.pedido_resumo, c.pedido)
             const preview =
-              ultima?.tipo === "card_proposta" ? "📋 Proposta enviada"
+              ultima?.tipo === "card_proposta" ? "Proposta enviada"
               : ultima?.tipo === "status_update" ? ultima.conteudo
               : ultima?.conteudo ?? ""
 
-            const temPendente = c.mensagens.some(
-              (m) => {
-                const payload = getPropostaPayload(m.payload)
-                return (
-                  m.tipo === "card_proposta" &&
-                  payload?.status === "PENDENTE" &&
-                  payload.remetente !== currentUserId
-                )
-              }
-            )
-
             return (
-              <div key={c.id} onClick={() => { setSelectedIdx(i); setCounterParaId(null) }}
+              <div key={c.id} onClick={() => { setSelectedIdx(i); setCounterParaId(null); setActionError(null); if (isCompact) setMobileChatOpen(true) }}
                 style={{ display: "flex", alignItems: "center", gap: "12px", padding: "14px 16px", cursor: "pointer", borderBottom: "1px solid #f5f5f5", background: i === selectedIdx ? "#fafafa" : "#fff", transition: "background 0.15s" }}
               >
-                <div style={{ width: 44, height: 44, borderRadius: "50%", background: avatarColors[i % avatarColors.length], display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: "15px", flexShrink: 0, position: "relative" }}>
-                  {c.cliente_nome[0]?.toUpperCase() ?? "C"}
-                  {temPendente && (
-                    <div style={{ position: "absolute", top: -2, right: -2, width: 12, height: 12, borderRadius: "50%", background: "#F5C518", border: "2px solid #fff" }} />
-                  )}
-                </div>
+                <ChatAvatar
+                  name={c.cliente_nome}
+                  src={c.cliente_foto_perfil}
+                  color={avatarColors[i % avatarColors.length]}
+                />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontWeight: 600, fontSize: "15px", margin: "0 0 2px" }}>{c.cliente_nome}</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 0 2px", minWidth: 0 }}>
+                    <p style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: "15px", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.cliente_nome}</p>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: "2px 6px",
+                        borderRadius: "999px",
+                        border: "0.5px solid #eee",
+                        background: "#fafafa",
+                        color: "#777",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      #{pedidoNumero}
+                    </span>
+                  </div>
                   <p style={{ fontSize: "13px", color: "#999", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}</p>
                 </div>
               </div>
             )
           })}
+          {loadingMoreChats && (
+            <div style={{ padding: "12px 16px", textAlign: "center", color: "#999", fontSize: "12px" }}>
+              Carregando conversas...
+            </div>
+          )}
+          {nextChatsPage && !loadingMoreChats && (
+            <button
+              type="button"
+              onClick={carregarMaisChats}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                border: "none",
+                borderTop: "1px solid #f5f5f5",
+                background: "#fff",
+                color: "#777",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Carregar mais conversas
+            </button>
+          )}
         </div>
       </div>
 
       {/* Área do chat */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "#fff" }}>
+      <div style={{ flex: 1, width: isCompact ? "100%" : undefined, display: showConversation ? "flex" : "none", flexDirection: "column", minWidth: 0, minHeight: 0, background: "#fff" }}>
 
         {/* Header */}
-        <div style={{ height: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, padding: "14px 24px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ width: 40, height: 40, borderRadius: "50%", background: avatarColors[selectedIdx % avatarColors.length], display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: "15px" }}>
-              {conversa.cliente_nome[0]?.toUpperCase() ?? "C"}
-            </div>
-            <div>
-              <p style={{ fontWeight: 600, margin: 0, fontSize: "17px" }}>{conversa.cliente_nome}</p>
+        <div style={{ height: "auto", minHeight: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, position: "relative", zIndex: 2, padding: isCompact ? "12px 14px" : "14px 24px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
+            {isCompact && (
+              <button
+                type="button"
+                onClick={() => setMobileChatOpen(false)}
+                aria-label="Voltar para conversas"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  border: "1px solid #eee",
+                  background: "#fff",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                <ArrowLeft size={17} />
+              </button>
+            )}
+            <ChatAvatar
+              name={conversa.cliente_nome}
+              src={conversa.cliente_foto_perfil}
+              color={avatarColors[selectedIdx % avatarColors.length]}
+              size={40}
+            />
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontWeight: 600, margin: 0, fontSize: "17px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conversa.cliente_nome}</p>
+              <p style={{ fontSize: "12px", color: "#999", margin: 0, overflowWrap: "anywhere" }}>
+                Pedido #{getPedidoDisplayNumber(conversa.pedido_resumo, conversa.pedido)}
+              </p>
               {conversa.evento_nome && (
-                <p style={{ fontSize: "12px", color: "#999", margin: 0 }}>📅 {conversa.evento_nome}</p>
+                <p style={{ fontSize: "12px", color: "#999", margin: 0, overflowWrap: "anywhere" }}>{conversa.evento_nome}</p>
               )}
             </div>
           </div>
-          <PedidoStatusBadge mensagens={conversa.mensagens} />
+          <ChatStatusBadge status={resolvePedidoVisualStatus(conversa.pedido_resumo)} />
         </div>
 
+        <ChatNextStepBanner
+          pedido={conversa.pedido_resumo}
+          role="bartender"
+          pedidoId={conversa.pedido}
+          pendingProposalAction={getPendingProposalAction(conversa.mensagens, currentUserId)}
+        />
+
+        {actionError && (
+          <div
+            role="alert"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: isCompact ? "9px 12px" : "9px 24px",
+              borderBottom: "1px solid #FECACA",
+              background: "#FEF2F2",
+              color: "#991B1B",
+              fontSize: "13px",
+              lineHeight: 1.35,
+              flexShrink: 0,
+            }}
+          >
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>{actionError}</span>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              aria-label="Fechar aviso"
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: "50%",
+                border: "none",
+                background: "transparent",
+                color: "#991B1B",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* Mensagens */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: "14px", background: "#f9f9f9" }}>
+        <div ref={messagesContainerRef} onScroll={handleMessagesScroll} style={{ flex: 1, overflowY: "auto", padding: isCompact ? "14px 12px" : "20px 24px", display: "flex", flexDirection: "column", gap: "14px", background: "#f9f9f9" }}>
           {conversa.mensagens.map((msg) => renderMensagem(msg))}
           {apiLoading && <div style={{ alignSelf: "center", color: "#aaa", fontSize: "13px" }}>Processando...</div>}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
-        <div style={{ padding: "14px 24px", borderTop: "1px solid #eee", display: "flex", alignItems: "center", gap: "10px", background: "#fff" }}>
+        <div style={{ padding: isCompact ? "10px 12px" : "14px 24px", borderTop: "1px solid #eee", display: "flex", alignItems: "center", gap: "10px", background: "#fff" }}>
           <input
             type="text"
             value={texto}
@@ -579,36 +837,10 @@ export default function BartenderChatPage() {
           <button onClick={handleEnviarTexto} disabled={!texto.trim()}
             style={{ width: 40, height: 40, borderRadius: "50%", background: texto.trim() ? "#F5C518" : "#e5e5e5", border: "none", cursor: texto.trim() ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.15s" }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
+            <Send size={16} color="#1a1a1a" strokeWidth={2} />
           </button>
         </div>
       </div>
     </div>
-  )
-}
-
-// ── Badge de status ────────────────────────────────────────────────────────────
-
-function PedidoStatusBadge({ mensagens }: { mensagens: Mensagem[] }) {
-  const ultimaPropostaMsg = [...mensagens].reverse().find((m) => m.tipo === "card_proposta")
-  const payload = ultimaPropostaMsg ? getPropostaPayload(ultimaPropostaMsg.payload) : null
-  const status = payload?.status ?? null
-  if (!status) return null
-
-  const configs: Record<string, { label: string; bg: string; color: string; border: string }> = {
-    PENDENTE:    { label: "Aguardando resposta",    bg: "#fff",     color: "#BA7517", border: "1px solid #EF9F27" },
-    ACEITA:      { label: "Proposta aceita ✓",      bg: "#EAF3DE",  color: "#3B6D11", border: "1px solid #97C459" },
-    RECUSADA:    { label: "Proposta recusada",       bg: "#FCEBEB",  color: "#A32D2D", border: "1px solid #E24B4A" },
-    CANCELADA:   { label: "Cancelada",               bg: "#F1EFE8",  color: "#5F5E5A", border: "1px solid #B4B2A9" },
-    SUBSTITUIDA: { label: "Contraproposta enviada",  bg: "#E6F1FB",  color: "#185FA5", border: "1px solid #85B7EB" },
-  }
-
-  const cfg = configs[status] ?? configs.PENDENTE
-  return (
-    <span style={{ fontSize: "12px", padding: "4px 12px", borderRadius: "20px", fontWeight: 500, background: cfg.bg, color: cfg.color, border: cfg.border }}>
-      {cfg.label}
-    </span>
   )
 }

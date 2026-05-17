@@ -25,6 +25,7 @@ type PedidoStatus =
 
 type PropostaStatus = "PENDENTE" | "ACEITA" | "RECUSADA" | "CANCELADA" | "SUBSTITUIDA"
 type PagamentoStatus = "PENDENTE" | "PAGO" | "CANCELADO" | string
+type PagamentoDisplayStatus = "AGUARDANDO_PAGAMENTO" | "PENDENTE" | "PAGO" | "CANCELADO"
 type TabKey = "TODOS" | "PENDENTES" | "ACEITOS" | "PAGOS" | "CONCLUIDOS" | "CANCELADOS"
 
 type BadgeConfig = {
@@ -50,6 +51,7 @@ type PropostaApi = {
 
 type PedidoApi = {
   id: number
+  numero_bartender?: number | null
   cliente: number
   cliente_nome: string
   bartender: number
@@ -102,22 +104,23 @@ const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "PENDENTES", label: "Pendentes" },
   { key: "ACEITOS", label: "Aceitos" },
   { key: "CANCELADOS", label: "Cancelados" },
-  { key: "PAGOS", label: "Pagos" },
+  { key: "PAGOS", label: "Liberados" },
   { key: "CONCLUIDOS", label: "Concluidos" },
 ]
 
 const statusConfigs: Record<PedidoStatus, BadgeConfig> = {
   EM_NEGOCIACAO: { label: "Pendente", bg: "#F5F5F5", color: "#5F5E5A", border: "1px solid #DDDDDD", stripe: "#B4B2A9" },
-  ACEITO: { label: "Aceito", bg: "#EEF7E8", color: "#3B6D11", border: "1px solid #B8D99E", stripe: "#97C459" },
+  ACEITO: { label: "Proposta aceita", bg: "#EEF7E8", color: "#3B6D11", border: "1px solid #B8D99E", stripe: "#97C459" },
   RECUSADO: { label: "Recusado", bg: "#F8EAEA", color: "#A32D2D", border: "1px solid #E2B6B6", stripe: "#E24B4A" },
   CANCELADO: { label: "Cancelado", bg: "#F8EAEA", color: "#A32D2D", border: "1px solid #E2B6B6", stripe: "#E24B4A" },
-  PAGO: { label: "Pago", bg: "#FFF8DB", color: "#7A5600", border: "1px solid #F1D46A", stripe: PRIMARY_YELLOW },
-  CONCLUIDO: { label: "Concluido", bg: "#FFF8DB", color: "#7A5600", border: "1px solid #F1D46A", stripe: PRIMARY_YELLOW },
+  PAGO: { label: "Pagamento liberado", bg: "#FFF8DB", color: "#7A5600", border: "1px solid #F1D46A", stripe: PRIMARY_YELLOW },
+  CONCLUIDO: { label: "Pedido concluido", bg: "#EAF3DE", color: "#3B6D11", border: "1px solid #97C459", stripe: "#97C459" },
 }
 
-const paymentStatusConfigs: Record<"PENDENTE" | "PAGO" | "CANCELADO", BadgeConfig> = {
+const paymentStatusConfigs: Record<PagamentoDisplayStatus, BadgeConfig> = {
+  AGUARDANDO_PAGAMENTO: { label: "Aguardando pagamento", bg: "#FFF8DB", color: "#7A5600", border: "1px solid #F1D46A", stripe: PRIMARY_YELLOW },
   PENDENTE: { label: "Pagamento pendente", bg: "#F5F5F5", color: "#5F5E5A", border: "1px solid #DDDDDD", stripe: "#B4B2A9" },
-  PAGO: { label: "Pago", bg: "#FFF8DB", color: "#7A5600", border: "1px solid #F1D46A", stripe: PRIMARY_YELLOW },
+  PAGO: { label: "Pagamento liberado", bg: "#FFF8DB", color: "#7A5600", border: "1px solid #F1D46A", stripe: PRIMARY_YELLOW },
   CANCELADO: { label: "Pagamento cancelado", bg: "#F8EAEA", color: "#A32D2D", border: "1px solid #E2B6B6", stripe: "#E24B4A" },
 }
 
@@ -218,13 +221,13 @@ function getPedidoStatus(pedido: PedidoApi) {
 }
 
 function getDisplayPedidoStatus(pedido: PedidoApi) {
-  return pedido.status === "PAGO" ? "CONCLUIDO" : pedido.status
+  return pedido.status
 }
 
 function getPedidoPaymentStatus(pedido: PedidoApi) {
   if (pedido.pagamento_status) return pedido.pagamento_status
   if (pedido.status === "PAGO") return "PAGO"
-  if (getDisplayPedidoStatus(pedido) === "CONCLUIDO") return "PENDENTE"
+  if (pedido.status === "ACEITO") return "AGUARDANDO_PAGAMENTO"
   return null
 }
 
@@ -238,11 +241,12 @@ function getStatusConfig(status: string) {
   }
 }
 
-function getPaymentStatusConfig(status: PagamentoStatus | null) {
+function getPaymentStatusConfig(status: PagamentoStatus | PagamentoDisplayStatus | null) {
   const normalized = (status ?? "PENDENTE").toUpperCase()
 
   if (normalized === "PAGO") return paymentStatusConfigs.PAGO
   if (normalized === "CANCELADO") return paymentStatusConfigs.CANCELADO
+  if (normalized === "AGUARDANDO_PAGAMENTO") return paymentStatusConfigs.AGUARDANDO_PAGAMENTO
   return paymentStatusConfigs.PENDENTE
 }
 
@@ -281,7 +285,7 @@ function matchesTab(pedido: PedidoApi, tab: TabKey) {
   if (tab === "PENDENTES") return status === "EM_NEGOCIACAO"
   if (tab === "ACEITOS") return status === "ACEITO"
   if (tab === "PAGOS") return status === "PAGO" || paymentStatus === "PAGO"
-  if (tab === "CONCLUIDOS") return status === "CONCLUIDO" || status === "PAGO"
+  if (tab === "CONCLUIDOS") return status === "CONCLUIDO"
   return status === "CANCELADO" || status === "RECUSADO"
 }
 
@@ -315,12 +319,16 @@ function getClientName(pedido: PedidoApi) {
   return pedido.cliente_nome?.trim() || "Cliente"
 }
 
+function getPedidoDisplayNumber(pedido: PedidoApi) {
+  return pedido.numero_bartender ?? "-"
+}
+
 function getSearchText(pedido: PedidoApi) {
   const status = getStatusConfig(getDisplayPedidoStatus(pedido)).label
   const paymentStatus = getPedidoPaymentStatus(pedido)
   const paymentStatusLabel = paymentStatus ? getPaymentStatusConfig(paymentStatus).label : ""
   return [
-    `pedido ${pedido.id}`,
+    `pedido ${getPedidoDisplayNumber(pedido)}`,
     getClientName(pedido),
     pedido.evento_nome,
     getAddress(pedido),
@@ -710,7 +718,7 @@ export default function BartenderHomePage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", flexWrap: "wrap" }}>
                       <strong style={{ color: "#1a1a1a", fontSize: "15px", fontWeight: 600, lineHeight: 1.2 }}>
-                        Pedido #{pedido.id}
+                        Pedido #{getPedidoDisplayNumber(pedido)}
                       </strong>
                       <span style={statusStyle(status)}>
                         {getStatusIcon(status)}

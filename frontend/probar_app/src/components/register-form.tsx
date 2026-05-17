@@ -1,12 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import { Eye, EyeOff } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Eye, EyeOff, X } from "lucide-react"
 import RoleSelector from "@/components/RoleSelector"
 import { useRouter } from "next/navigation"
 import { createUser } from "@/services/user"
 import { apiAuth, setToken } from "@/services/api"
+import { getActiveLegalDocuments, type LegalDocument } from "@/services/legal-documents"
 
 type ApiErrorResponse = {
   response?: {
@@ -60,8 +61,47 @@ export function RegisterForm() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [agreed, setAgreed] = useState(false)
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocument[]>([])
+  const [legalDocumentsLoading, setLegalDocumentsLoading] = useState(false)
+  const [selectedDocument, setSelectedDocument] = useState<LegalDocument | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadLegalDocuments() {
+      if (!tipo) {
+        setLegalDocuments([])
+        setAgreed(false)
+        return
+      }
+
+      setLegalDocumentsLoading(true)
+      setError("")
+
+      try {
+        const documents = await getActiveLegalDocuments(tipo)
+        if (!cancelled) {
+          setLegalDocuments(documents)
+          setAgreed(false)
+        }
+      } catch {
+        if (!cancelled) {
+          setLegalDocuments([])
+          setError("Não foi possível carregar os termos e a política de privacidade.")
+        }
+      } finally {
+        if (!cancelled) setLegalDocumentsLoading(false)
+      }
+    }
+
+    loadLegalDocuments()
+
+    return () => {
+      cancelled = true
+    }
+  }, [tipo])
 
   async function handleRegister() {
     if (loading) return
@@ -74,6 +114,10 @@ export function RegisterForm() {
       }
       if (!agreed) {
         setError("Aceite os termos para continuar.")
+        return
+      }
+      if (legalDocuments.length < 2) {
+        setError("Os termos e a política de privacidade ainda não estão disponíveis.")
         return
       }
       if (!name.trim()) {
@@ -91,7 +135,13 @@ export function RegisterForm() {
 
       setLoading(true)
 
-      await createUser({ name: name.trim(), email: email.trim(), password, tipo })
+      await createUser({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        tipo,
+        documentos_legais_ids: legalDocuments.map((document) => document.id),
+      })
 
       const { data: authData } = await apiAuth.post("/api/token/", { email: email.trim(), password })
       setToken(authData.access)
@@ -112,6 +162,7 @@ export function RegisterForm() {
       setConfirmPassword("")
       setTipo("")
       setAgreed(false)
+      setLegalDocuments([])
 
       if (authData.tipo === "cliente") {
         router.push("/client/complete")
@@ -133,6 +184,8 @@ export function RegisterForm() {
 
   const inputClass =
     "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F5C518] focus:border-transparent"
+  const termsDocument = legalDocuments.find((document) => document.tipo === "termos_cliente" || document.tipo === "termos_bartender")
+  const privacyDocument = legalDocuments.find((document) => document.tipo === "politica_privacidade")
 
   return (
     <div className="w-full space-y-5">
@@ -174,7 +227,7 @@ export function RegisterForm() {
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="José alencar"
+            placeholder="José Alencar"
             className={inputClass}
           />
         </div>
@@ -241,14 +294,30 @@ export function RegisterForm() {
             id="terms"
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
+            disabled={!tipo || legalDocumentsLoading || legalDocuments.length < 2}
             className="mt-0.5 accent-[#F5C518]"
           />
-          <label htmlFor="terms">
+          <div>
             Li e concordo com os{" "}
-            <span className="font-semibold underline cursor-pointer text-gray-700">Termos e Condições</span>
+            <button
+              type="button"
+              disabled={!termsDocument}
+              onClick={() => termsDocument && setSelectedDocument(termsDocument)}
+              className="font-semibold underline text-gray-700 disabled:cursor-not-allowed disabled:text-gray-400"
+            >
+              Termos e Condições
+            </button>
             {" "}e a{" "}
-            <span className="font-semibold underline cursor-pointer text-gray-700">Política de Privacidade</span>
-          </label>
+            <button
+              type="button"
+              disabled={!privacyDocument}
+              onClick={() => privacyDocument && setSelectedDocument(privacyDocument)}
+              className="font-semibold underline text-gray-700 disabled:cursor-not-allowed disabled:text-gray-400"
+            >
+              Política de Privacidade
+            </button>
+            {legalDocumentsLoading && <span className="block mt-1">Carregando documentos legais...</span>}
+          </div>
         </div>
 
         {error && (
@@ -270,6 +339,30 @@ export function RegisterForm() {
           Faça login
         </Link>
       </p>
+
+      {selectedDocument && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">{selectedDocument.titulo}</h3>
+                <p className="text-xs text-gray-500">Versão {selectedDocument.versao}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedDocument(null)}
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap px-5 py-4 text-sm leading-6 text-gray-700">
+              {selectedDocument.conteudo}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

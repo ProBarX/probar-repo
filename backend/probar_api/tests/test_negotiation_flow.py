@@ -28,6 +28,9 @@ def test_negotiation_flow_atomic_create_counter_accept():
     cliente, _ = Cliente.objects.get_or_create(user=cliente_user)
     bartender, _ = Bartender.objects.get_or_create(user=bartender_user, defaults={'valor_hora': Decimal('100.00')})
 
+    bartender.valor_hora = Decimal('100.00')
+    bartender.save(update_fields=['valor_hora'])
+
     # evento do cliente
     evento = Evento.objects.create(
         cliente=cliente,
@@ -89,3 +92,4 @@ def test_negotiation_flow_atomic_create_counter_accept():
     assert msgs.exists()
     last = msgs.last()
     assert int(last.payload.get('proposta_id')) == nova.id
+    assert 'aguardando pagamento' in last.conteudo.lower()

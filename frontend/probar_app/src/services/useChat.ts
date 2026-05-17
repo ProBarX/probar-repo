@@ -17,6 +17,7 @@ export type Proposta = {
   pedido: number
   remetente: number
   tipo: string
+  valor_hora?: number | string
   horas: number
   valor_adicional: string
   desconto: string
@@ -35,15 +36,54 @@ export type Mensagem = {
   criado_em: string
 }
 
+export type PedidoResumoChat = {
+  pedido_id: number
+  numero_bartender: number | null
+  pedido_status: string | null
+  pagamento_status: string | null
+  pagamento_finalizado_pelo_cliente: boolean
+  presenca_status: string | null
+  presenca_origem: string | null
+  servico_fim_previsto: string | null
+  liberacao_automatica_em: string | null
+  solicitacao_reembolso_status: string | null
+  solicitacao_reembolso_tipo: string | null
+}
+
 export type Chat = {
   id: number
   pedido: number
   cliente_nome?: string
+  cliente_foto_perfil?: string | null
   bartender_nome?: string
+  bartender_foto_perfil?: string | null
   bartender_especialidade?: string
   evento_nome?: string
+  evento_data?: string | null
+  evento_hora_inicio?: string | null
+  evento_hora_fim?: string | null
+  evento_cep?: string | null
+  evento_rua?: string | null
+  evento_numero?: string | null
+  evento_complemento?: string | null
+  evento_quantidade_convidados?: number | null
+  evento_descricao?: string | null
+  pedido_resumo?: PedidoResumoChat | null
   mensagens: Mensagem[]
   criado_em: string
+}
+
+export type ChatPage = {
+  results: Chat[]
+  next: string | null
+  count: number | null
+}
+
+type PaginatedResponse<T> = {
+  count?: number
+  next?: string | null
+  previous?: string | null
+  results?: T[]
 }
 
 // ─── Helper: busca token via rota interna (mesma lógica do api.ts) ────────────
@@ -58,6 +98,22 @@ async function getToken(): Promise<string | null> {
   }
 }
 
+function extractApiError(data: unknown): string | null {
+  if (typeof data === "string") return data
+  if (!data || typeof data !== "object") return null
+
+  const record = data as Record<string, unknown>
+  const detail = record.detail
+  if (typeof detail === "string") return detail
+  if (Array.isArray(detail) && detail.length > 0) return String(detail[0])
+
+  const firstValue = Object.values(record)[0]
+  if (typeof firstValue === "string") return firstValue
+  if (Array.isArray(firstValue) && firstValue.length > 0) return String(firstValue[0])
+
+  return null
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const token = await getToken()
   const res = await fetch(`${API_BASE}${path}`, {
@@ -68,8 +124,26 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    let message = `Erro na API (${res.status})`
+    try {
+      const data = await res.json()
+      message = extractApiError(data) ?? message
+    } catch {
+      // Mantem a mensagem generica quando a API nao retorna JSON.
+    }
+    throw new Error(message)
+  }
   return res.json()
+}
+
+function buildChatPath({ pedidoId, page }: { pedidoId?: number; page?: number } = {}) {
+  const params = new URLSearchParams()
+  if (pedidoId) params.set("pedido", String(pedidoId))
+  if (page && page > 1) params.set("page", String(page))
+
+  const query = params.toString()
+  return `/chats/${query ? `?${query}` : ""}`
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -78,13 +152,45 @@ export function useChat() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Buscar chats — suporta resposta paginada { count, results } e array direto
-  const getChats = useCallback(async (): Promise<Chat[]> => {
-    const data = await apiFetch<Chat[] | { count: number; results: Chat[] }>("/chats/")
-    return Array.isArray(data) ? data : (data.results ?? [])
+  const getChatsPage = useCallback(async ({
+    pedidoId,
+    page = 1,
+  }: {
+    pedidoId?: number
+    page?: number
+  } = {}): Promise<ChatPage> => {
+    const data = await apiFetch<Chat[] | PaginatedResponse<Chat>>(buildChatPath({ pedidoId, page }))
+    if (Array.isArray(data)) {
+      return { results: data, next: null, count: data.length }
+    }
+
+    return {
+      results: data.results ?? [],
+      next: data.next ?? null,
+      count: typeof data.count === "number" ? data.count : null,
+    }
   }, [])
 
+  // Buscar chats — mantem compatibilidade e percorre todas as paginas quando usado diretamente.
+  const getChats = useCallback(async (pedidoId?: number): Promise<Chat[]> => {
+    const all: Chat[] = []
+    let page = 1
+
+    for (let guard = 0; guard < 50; guard += 1) {
+      const data = await getChatsPage({ pedidoId, page })
+      all.push(...data.results)
+      if (!data.next) break
+      page += 1
+    }
+
+    return all
+  }, [getChatsPage])
+
   // Buscar mensagens de um chat específico
+  const getChat = useCallback(async (chatId: number): Promise<Chat> => {
+    return apiFetch<Chat>(`/chats/${chatId}/`)
+  }, [])
+
   const getMensagens = useCallback(async (chatId: number): Promise<Mensagem[]> => {
     const chat = await apiFetch<Chat>(`/chats/${chatId}/`)
     return chat.mensagens
@@ -158,6 +264,8 @@ export function useChat() {
     loading,
     error,
     getChats,
+    getChatsPage,
+    getChat,
     getMensagens,
     enviarMensagem,
     aceitarProposta,

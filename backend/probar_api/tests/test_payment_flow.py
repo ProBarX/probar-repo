@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from rest_framework.test import APIClient
 
-from core.enums import PagamentoMetodo, PagamentoStatus, PedidoStatus, TipoUsuario
+from core.enums import PagamentoMetodo, PagamentoStatus, PedidoStatus, PresencaOrigem, PresencaStatus, TipoUsuario
 from core.models import Bartender, Cliente, Evento, Pagamento, Pedido, User
 from core.services import stripe_service
 
@@ -45,6 +45,9 @@ def _create_pedido(
     onboarding=True,
     has_account=True,
     event_date=None,
+    hora_inicio=datetime.time(20, 0),
+    hora_fim=datetime.time(23, 0),
+    horas_aprovadas=3,
 ):
     cliente_user = User.objects.create_user(
         email=f"cliente+{uuid4().hex}@example.com",
@@ -68,8 +71,8 @@ def _create_pedido(
         cliente=cliente,
         nome="Evento pagamento",
         data=event_date or datetime.date.today(),
-        hora_inicio=datetime.time(20, 0),
-        hora_fim=datetime.time(23, 0),
+        hora_inicio=hora_inicio,
+        hora_fim=hora_fim,
         quantidade_convidados=20,
     )
 
@@ -79,6 +82,7 @@ def _create_pedido(
         evento=evento,
         status=status,
         valor_total_aprovado=valor_total,
+        horas_aprovadas=horas_aprovadas,
     )
 
     return pedido, cliente_user
@@ -105,6 +109,62 @@ def test_criar_pagamento_seguro_inclui_fee_e_metodo_stripe(monkeypatch, settings
     assert pagamento.metodo_pagamento == PagamentoMetodo.STRIPE
     assert pagamento.status == PagamentoStatus.PENDENTE
     assert pagamento.stripe_payment_intent_id == "pi_test"
+
+
+@pytest.mark.django_db
+def test_confirmar_pagamento_autorizado_sincroniza_requires_capture(monkeypatch):
+    pedido, cliente_user = _create_pedido()
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=Decimal("100.00"),
+        status=PagamentoStatus.PENDENTE,
+        stripe_payment_intent_id="pi_autorizado",
+    )
+
+    def fake_retrieve(payment_intent_id):
+        assert payment_intent_id == "pi_autorizado"
+        return DummyIntent(intent_id=payment_intent_id, status="requires_capture")
+
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
+
+    client = APIClient()
+    client.force_authenticate(cliente_user)
+    response = client.post(f"/api/v1/stripe/pagamento-autorizado/{pagamento.id}/")
+
+    assert response.status_code == 200, response.data
+    pagamento.refresh_from_db()
+    assert pagamento.status == PagamentoStatus.PENDENTE
+    assert pagamento.finalizado_pelo_cliente is True
+    assert response.data["stripe_status"] == "requires_capture"
+    assert response.data["finalizado_pelo_cliente"] is True
+
+
+@pytest.mark.django_db
+def test_confirmar_pagamento_autorizado_nao_marca_pago_quando_intent_succeeded(monkeypatch):
+    pedido, cliente_user = _create_pedido()
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=Decimal("100.00"),
+        status=PagamentoStatus.PENDENTE,
+        stripe_payment_intent_id="pi_succeeded_antes_presenca",
+    )
+
+    def fake_retrieve(payment_intent_id):
+        assert payment_intent_id == "pi_succeeded_antes_presenca"
+        return DummyIntent(intent_id=payment_intent_id, status="succeeded")
+
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
+
+    client = APIClient()
+    client.force_authenticate(cliente_user)
+    response = client.post(f"/api/v1/stripe/pagamento-autorizado/{pagamento.id}/")
+
+    assert response.status_code == 400, response.data
+    pagamento.refresh_from_db()
+    pedido.refresh_from_db()
+    assert pagamento.status == PagamentoStatus.PENDENTE
+    assert pagamento.finalizado_pelo_cliente is False
+    assert pedido.status == PedidoStatus.ACEITO
 
 
 @pytest.mark.django_db
@@ -162,6 +222,8 @@ def test_criar_pagamento_seguro_evento_distante_salva_cartao(monkeypatch, settin
 @pytest.mark.django_db
 def test_capturar_pagamento_seguro_requires_capture(monkeypatch):
     pedido, _ = _create_pedido()
+    pedido.presenca_status = PresencaStatus.PRESENTE
+    pedido.save(update_fields=["presenca_status"])
     pagamento = Pagamento.objects.create(
         pedido=pedido,
         valor=pedido.valor_total_aprovado,
@@ -194,6 +256,8 @@ def test_capturar_pagamento_seguro_requires_capture(monkeypatch):
 @pytest.mark.django_db
 def test_capturar_pagamento_seguro_succeeded_nao_recaptura(monkeypatch):
     pedido, _ = _create_pedido()
+    pedido.presenca_status = PresencaStatus.PRESENTE
+    pedido.save(update_fields=["presenca_status"])
     pagamento = Pagamento.objects.create(
         pedido=pedido,
         valor=pedido.valor_total_aprovado,
@@ -219,6 +283,8 @@ def test_capturar_pagamento_seguro_succeeded_nao_recaptura(monkeypatch):
 @pytest.mark.django_db
 def test_capturar_pagamento_seguro_requires_payment_method(monkeypatch):
     pedido, _ = _create_pedido()
+    pedido.presenca_status = PresencaStatus.PRESENTE
+    pedido.save(update_fields=["presenca_status"])
     pagamento = Pagamento.objects.create(
         pedido=pedido,
         valor=pedido.valor_total_aprovado,
@@ -232,13 +298,15 @@ def test_capturar_pagamento_seguro_requires_payment_method(monkeypatch):
 
     monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
 
-    with pytest.raises(ValueError, match="Pagamento ainda não confirmado"):
+    with pytest.raises(ValueError, match="Pagamento ainda nao confirmado"):
         stripe_service.capturar_pagamento_seguro(pagamento)
 
 
 @pytest.mark.django_db
 def test_processar_pagamentos_pendentes_skip_requires_payment_method(monkeypatch):
     pedido, _ = _create_pedido()
+    pedido.presenca_status = PresencaStatus.PRESENTE
+    pedido.save(update_fields=["presenca_status"])
     pagamento = Pagamento.objects.create(
         pedido=pedido,
         valor=pedido.valor_total_aprovado,
@@ -365,7 +433,9 @@ def test_criar_pagamento_seguro_recria_setup_cancelado(monkeypatch, settings):
 
 @pytest.mark.django_db
 def test_finalizar_pagamento_nao_marca_finalizado_quando_captura_falha(monkeypatch):
-    pedido, cliente_user = _create_pedido()
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
     pagamento = Pagamento.objects.create(
         pedido=pedido,
         valor=pedido.valor_total_aprovado,
@@ -388,11 +458,15 @@ def test_finalizar_pagamento_nao_marca_finalizado_quando_captura_falha(monkeypat
     assert response.status_code == 400
     assert pagamento.status == PagamentoStatus.PENDENTE
     assert pagamento.finalizado_pelo_cliente is False
+    pedido.refresh_from_db()
+    assert pedido.presenca_status == PresencaStatus.PRESENTE
 
 
 @pytest.mark.django_db
 def test_finalizar_pagamento_salva_finalizado_depois_da_captura(monkeypatch):
-    pedido, cliente_user = _create_pedido()
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
     pagamento = Pagamento.objects.create(
         pedido=pedido,
         valor=pedido.valor_total_aprovado,
@@ -416,3 +490,348 @@ def test_finalizar_pagamento_salva_finalizado_depois_da_captura(monkeypatch):
     assert response.status_code == 200
     assert pagamento.status == PagamentoStatus.PAGO
     assert pagamento.finalizado_pelo_cliente is True
+    pedido.refresh_from_db()
+    assert pedido.presenca_status == PresencaStatus.PRESENTE
+
+
+@pytest.mark.django_db
+def test_fim_servico_contratado_usa_inicio_evento_mais_horas_aprovadas():
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today(),
+        hora_inicio=datetime.time(14, 0),
+        hora_fim=datetime.time(18, 0),
+        horas_aprovadas=2,
+    )
+
+    assert pedido.servico_inicio_previsto.time() == datetime.time(14, 0)
+    assert pedido.servico_fim_previsto.time() == datetime.time(16, 0)
+    assert pedido.liberacao_automatica_em.time() == datetime.time(16, 5)
+
+
+@pytest.mark.django_db
+def test_pedido_antigo_sem_horas_aprovadas_usa_fim_do_evento():
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today(),
+        hora_inicio=datetime.time(14, 0),
+        hora_fim=datetime.time(18, 0),
+        horas_aprovadas=None,
+    )
+
+    assert pedido.servico_fim_previsto.time() == datetime.time(18, 0)
+    assert pedido.liberacao_automatica_em.time() == datetime.time(18, 5)
+
+
+@pytest.mark.django_db
+def test_fim_servico_contratado_funciona_em_evento_que_passa_da_meia_noite():
+    event_date = datetime.date.today()
+    pedido, _ = _create_pedido(
+        event_date=event_date,
+        hora_inicio=datetime.time(22, 0),
+        hora_fim=datetime.time(2, 0),
+        horas_aprovadas=3,
+    )
+
+    assert pedido.servico_fim_previsto.date() == event_date + datetime.timedelta(days=1)
+    assert pedido.servico_fim_previsto.time() == datetime.time(1, 0)
+    assert pedido.liberacao_automatica_em.time() == datetime.time(1, 5)
+
+
+@pytest.mark.django_db
+def test_cliente_confirma_presenca_e_captura_pagamento(monkeypatch):
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_presenca",
+    )
+
+    def fake_retrieve(_intent_id):
+        return DummyIntent(intent_id=_intent_id, status="requires_capture")
+
+    captured_ids = []
+
+    def fake_capture(intent_id):
+        captured_ids.append(intent_id)
+
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "capture", fake_capture)
+
+    client = APIClient()
+    client.force_authenticate(user=cliente_user)
+
+    response = client.post(f"/api/v1/pedidos/{pedido.id}/confirmar-presenca/", data={}, format="json")
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert response.status_code == 200, response.data
+    assert pedido.presenca_status == PresencaStatus.PRESENTE
+    assert pedido.presenca_origem == PresencaOrigem.CLIENTE
+    assert pagamento.status == PagamentoStatus.PAGO
+    assert pedido.status == PedidoStatus.PAGO
+    assert captured_ids == ["pi_presenca"]
+
+
+@pytest.mark.django_db
+def test_bartender_nao_pode_confirmar_presenca():
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=pedido.bartender.user)
+
+    response = client.post(f"/api/v1/pedidos/{pedido.id}/confirmar-presenca/", data={}, format="json")
+
+    pedido.refresh_from_db()
+
+    assert response.status_code == 403
+    assert pedido.presenca_status == PresencaStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_registrar_ausencia_bloqueia_captura(monkeypatch):
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_ausente",
+    )
+
+    def fake_retrieve(_intent_id):
+        return DummyIntent(intent_id=_intent_id, status="requires_capture")
+
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
+
+    client = APIClient()
+    client.force_authenticate(user=cliente_user)
+
+    response = client.post(
+        f"/api/v1/pedidos/{pedido.id}/registrar-ausencia/",
+        data={"observacao": "Nao compareceu"},
+        format="json",
+    )
+
+    pedido.refresh_from_db()
+
+    assert response.status_code == 200, response.data
+    assert pedido.presenca_status == PresencaStatus.AUSENTE
+    assert pedido.presenca_origem == PresencaOrigem.CLIENTE
+
+    with pytest.raises(ValueError, match="ausencia"):
+        stripe_service.capturar_pagamento_seguro(pagamento)
+
+    pagamento.refresh_from_db()
+    assert pagamento.status == PagamentoStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_endpoint_finalizar_respeita_ausencia_registrada():
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_finalizar_ausente",
+    )
+    pedido.presenca_status = PresencaStatus.AUSENTE
+    pedido.presenca_origem = PresencaOrigem.CLIENTE
+    pedido.save(update_fields=["presenca_status", "presenca_origem"])
+
+    client = APIClient()
+    client.force_authenticate(user=cliente_user)
+
+    response = client.post(f"/api/v1/stripe/finalizar/{pagamento.id}/")
+
+    pagamento.refresh_from_db()
+
+    assert response.status_code == 400
+    assert pagamento.status == PagamentoStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_endpoint_capturar_respeita_ausencia_registrada():
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_capturar_ausente",
+    )
+    pedido.presenca_status = PresencaStatus.AUSENTE
+    pedido.presenca_origem = PresencaOrigem.CLIENTE
+    pedido.save(update_fields=["presenca_status", "presenca_origem"])
+
+    client = APIClient()
+    client.force_authenticate(user=cliente_user)
+
+    response = client.post(f"/api/v1/stripe/capturar/{pagamento.id}/")
+
+    pagamento.refresh_from_db()
+
+    assert response.status_code == 400
+    assert pagamento.status == PagamentoStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_processar_pagamentos_pendentes_libera_automaticamente_apos_5_minutos(monkeypatch):
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1),
+        hora_inicio=datetime.time(14, 0),
+        hora_fim=datetime.time(18, 0),
+        horas_aprovadas=2,
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_auto",
+    )
+
+    def fake_retrieve(_intent_id):
+        return DummyIntent(intent_id=_intent_id, status="requires_capture")
+
+    captured_ids = []
+
+    def fake_capture(intent_id):
+        captured_ids.append(intent_id)
+
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "retrieve", fake_retrieve)
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "capture", fake_capture)
+
+    stats = stripe_service.processar_pagamentos_pendentes()
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert stats["captured"] == 1
+    assert pedido.presenca_status == PresencaStatus.PRESENTE
+    assert pedido.presenca_origem == PresencaOrigem.AUTOMATICA
+    assert pagamento.status == PagamentoStatus.PAGO
+    assert captured_ids == ["pi_auto"]
+
+
+@pytest.mark.django_db
+def test_processar_pagamentos_agendados_nao_marca_pago_antes_da_liberacao(monkeypatch, settings):
+    settings.STRIPE_MANUAL_CAPTURE_WINDOW_DAYS = 5
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() + datetime.timedelta(days=1),
+        hora_inicio=datetime.time(14, 0),
+        hora_fim=datetime.time(18, 0),
+        horas_aprovadas=2,
+    )
+    pedido.cliente.stripe_customer_id = "cus_scheduled"
+    pedido.cliente.save(update_fields=["stripe_customer_id"])
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_setup_intent_id="seti_scheduled",
+    )
+
+    def fake_setup_retrieve(_intent_id):
+        return DummySetupIntent(
+            intent_id="seti_scheduled",
+            status="succeeded",
+            payment_method="pm_scheduled",
+        )
+
+    def fake_payment_create(**_kwargs):
+        return DummyIntent(intent_id="pi_scheduled", status="succeeded")
+
+    monkeypatch.setattr(stripe_service.stripe.SetupIntent, "retrieve", fake_setup_retrieve)
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "create", fake_payment_create)
+
+    stats = stripe_service.processar_pagamentos_pendentes()
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert stats["authorized"] == 0
+    assert stats["captured"] == 0
+    assert stats["errors"] == 0
+    assert pagamento.status == PagamentoStatus.PENDENTE
+    assert pedido.status == PedidoStatus.ACEITO
+    assert pedido.presenca_status == PresencaStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_webhook_succeeded_respeita_ausencia_registrada():
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_webhook_ausente",
+    )
+    pedido.presenca_status = PresencaStatus.AUSENTE
+    pedido.presenca_origem = PresencaOrigem.CLIENTE
+    pedido.save(update_fields=["presenca_status", "presenca_origem"])
+
+    stripe_service.processar_webhook(
+        {
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_webhook_ausente",
+                    "status": "succeeded",
+                    "payment_method_types": ["card"],
+                }
+            },
+        }
+    )
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert pedido.status == PedidoStatus.ACEITO
+    assert pedido.presenca_status == PresencaStatus.AUSENTE
+    assert pagamento.status == PagamentoStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_webhook_succeeded_antes_da_liberacao_nao_marca_pago():
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() + datetime.timedelta(days=1),
+        hora_inicio=datetime.time(14, 0),
+        hora_fim=datetime.time(18, 0),
+        horas_aprovadas=2,
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_webhook_early",
+    )
+
+    stripe_service.processar_webhook(
+        {
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_webhook_early",
+                    "status": "succeeded",
+                    "payment_method_types": ["card"],
+                }
+            },
+        }
+    )
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert pedido.status == PedidoStatus.ACEITO
+    assert pedido.presenca_status == PresencaStatus.PENDENTE
+    assert pagamento.status == PagamentoStatus.PENDENTE

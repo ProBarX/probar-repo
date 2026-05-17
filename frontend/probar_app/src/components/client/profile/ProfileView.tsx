@@ -1,8 +1,13 @@
 "use client"
 
 import { useState, useRef } from "react"
-import type { CSSProperties } from "react"
+import type { CSSProperties, ReactNode } from "react"
+import { CalendarDays, Mail, Star, User } from "lucide-react"
 import { api } from "@/services/api"
+import type { ApiError, EventStatus } from "@/types/user"
+import { resolveMediaUrl } from "@/lib/media-url"
+
+const PRIMARY_YELLOW = "#F5C518"
 
 export type ClientProfile = {
   nome: string
@@ -14,7 +19,7 @@ export type ClientProfile = {
   eventos: {
     nome: string
     data: string
-    status: "Concluído" | "Em andamento" | "Cancelado"
+    status: EventStatus
   }[]
 }
 
@@ -23,9 +28,29 @@ type Props = {
   onUpdate?: (updated: Partial<ClientProfile>) => void
 }
 
+const cardStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "20px",
+  border: "1px solid #e8e8e8",
+  borderRadius: "12px",
+  padding: "20px 24px",
+  marginBottom: "20px",
+  backgroundColor: "#fff",
+}
+
+function formatDateDisplay(iso: string) {
+  if (!iso) return "—"
+  if (iso.includes("/")) return iso
+  return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
 export function ProfileView({ profile, onUpdate }: Props) {
   const [nome, setNome] = useState(profile.nome)
-  const [email, setEmail] = useState(profile.email)
   const [dataNascimento, setDataNascimento] = useState(profile.data_nascimento)
   const [fotoPreview, setFotoPreview] = useState<string | null>(profile.foto_perfil ?? null)
   const [saving, setSaving] = useState(false)
@@ -41,65 +66,10 @@ export function ProfileView({ profile, onUpdate }: Props) {
     .toUpperCase()
 
   const statusColor: Record<string, string> = {
-    "Concluído":    "#888",
     "Em andamento": "#d4860a",
-    "Cancelado":    "#e53e3e",
-  }
-
-  function formatDateDisplay(iso: string) {
-    if (!iso) return "—"
-
-    // já está no formato brasileiro DD/MM/YYYY
-    if (iso.includes("/")) return iso
-
-    // formato ISO YYYY-MM-DD
-    return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR", {
-      day: "2-digit", month: "short", year: "numeric",
-    })
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    setSaveError(null)
-    setSaveSuccess(false)
-
-    try {
-      const formData = new FormData()
-      formData.append("name", nome)
-      formData.append("email", email)
-
-      if (dataNascimento) {
-        // converte DD/MM/YYYY → YYYY-MM-DD se necessário
-        let dataISO = dataNascimento
-        if (dataNascimento.includes("/")) {
-          const [dia, mes, ano] = dataNascimento.split("/")
-          dataISO = `${ano}-${mes}-${dia}`
-        }
-        formData.append("data_nascimento", dataISO)
-      }
-
-      const fileInput = fileInputRef.current
-      if (fileInput?.files?.[0]) {
-        formData.append("foto_perfil", fileInput.files[0])
-      }
-
-      const { data } = await api.patch("/clientes/me/", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-
-      setSaveSuccess(true)
-      onUpdate?.({
-        nome:            data.name,
-        email:           data.email,
-        data_nascimento: data.data_nascimento,
-        foto_perfil:     data.foto_perfil,
-      })
-      setTimeout(() => setSaveSuccess(false), 3000)
-    } catch (err: any) {
-      setSaveError(err?.response?.data?.detail ?? "Erro ao salvar. Tente novamente.")
-    } finally {
-      setSaving(false)
-    }
+    "Confirmado": "#185FA5",
+    "Finalizado": "#2e7d32",
+    "Cancelado": "#e53e3e",
   }
 
   function handleFotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -110,52 +80,118 @@ export function ProfileView({ profile, onUpdate }: Props) {
     reader.readAsDataURL(file)
   }
 
+  async function handleSave() {
+    setSaving(true)
+    setSaveError(null)
+    setSaveSuccess(false)
+
+    try {
+      const formData = new FormData()
+      formData.append("name", nome)
+
+      if (dataNascimento) {
+        let dataISO = dataNascimento
+        if (dataNascimento.includes("/")) {
+          const [dia, mes, ano] = dataNascimento.split("/")
+          dataISO = `${ano}-${mes}-${dia}`
+        }
+        formData.append("data_nascimento", dataISO)
+      }
+
+      const fileInput = fileInputRef.current
+      if (fileInput?.files?.[0]) formData.append("foto_perfil", fileInput.files[0])
+
+      const { data } = await api.patch("/clientes/me/", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+
+      setSaveSuccess(true)
+      onUpdate?.({
+        nome:            data.name,
+        email:           data.email,
+        data_nascimento: data.data_nascimento,
+        foto_perfil:     resolveMediaUrl(data.foto_perfil),
+      })
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err: unknown) {
+      const apiError = err as ApiError
+      setSaveError(apiError?.response?.data?.detail ?? "Erro ao salvar. Tente novamente.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div style={{ maxWidth: "780px" }} className="mx-auto">
       <h2 style={{ fontSize: "22px", fontWeight: "700", margin: "0 0 24px" }}>Meu perfil</h2>
 
-      {/* Card principal */}
+      {/* Header: avatar + nome + stats */}
       <div style={cardStyle}>
         <div
           onClick={() => fileInputRef.current?.click()}
-          style={{
-            width: "72px", height: "72px", borderRadius: "50%",
-            background: "#ddd", display: "flex", alignItems: "center",
-            justifyContent: "center", fontSize: "24px", fontWeight: "700",
-            color: "#555", flexShrink: 0, cursor: "pointer",
-            overflow: "hidden", position: "relative",
-          }}
           title="Trocar foto"
+          style={{
+            width: "72px",
+            height: "72px",
+            borderRadius: "50%",
+            background: "#ddd",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "24px",
+            fontWeight: "700",
+            color: "#555",
+            flexShrink: 0,
+            cursor: "pointer",
+            overflow: "hidden",
+            position: "relative",
+          }}
         >
           {fotoPreview ? (
-            <img src={fotoPreview} alt="Foto de perfil" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img
+              src={fotoPreview}
+              alt="Foto de perfil"
+              onError={() => setFotoPreview(null)}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
           ) : (
             initials
           )}
           <div
             style={{
-              position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              opacity: 0, transition: "opacity 0.15s", fontSize: "18px",
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: 0,
+              transition: "opacity 0.15s",
             }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = "0")}
           >
-            📷
+            <Star size={20} color="#fff" />
           </div>
         </div>
         <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFotoChange} />
 
-        <div>
+        <div style={{ flex: 1 }}>
           <h3 style={{ margin: "0 0 4px", fontSize: "20px", fontWeight: "700" }}>{nome}</h3>
           <p style={{ margin: "0 0 12px", color: "#888", fontSize: "13px" }}>
             Membro desde {profile.membro_desde}
           </p>
           <span style={{
-            display: "inline-flex", alignItems: "center", gap: "6px",
-            background: "#fdf6dc", border: "1px solid #f5e090",
-            borderRadius: "20px", padding: "4px 14px",
-            fontSize: "13px", fontWeight: "500", color: "#8a6d00",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            background: "#fdf6dc",
+            border: "1px solid #f5e090",
+            borderRadius: "20px",
+            padding: "4px 14px",
+            fontSize: "13px",
+            fontWeight: "500",
+            color: "#8a6d00",
           }}>
             🎉 {profile.total_eventos} eventos criados
           </span>
@@ -165,45 +201,18 @@ export function ProfileView({ profile, onUpdate }: Props) {
       {/* Informações pessoais */}
       <div style={{ ...cardStyle, flexDirection: "column", alignItems: "stretch", gap: "0" }}>
         <h4 style={{ margin: "0 0 16px", fontSize: "16px", fontWeight: "600" }}>Informações pessoais</h4>
-
+        <InfoRow icon={<User size={16} color="#8a6d00" />} label="Nome" value={nome} onChange={setNome} />
+        <Divider />
+        <InfoRow icon={<Mail size={16} color="#8a6d00" />} label="Email" value={profile.email} readOnly />
+        <Divider />
         <InfoRow
-          icon="👤"
-          label="Nome"
-          value={nome}
-          onChange={setNome}
-        />
-        <div style={{ height: "1px", background: "#f0f0f0" }} />
-        <InfoRow
-          icon="✉️"
-          label="Email"
-          value={email}
-          onChange={setEmail}
-        />
-        <div style={{ height: "1px", background: "#f0f0f0" }} />
-        <InfoRow
-          icon="🎂"
+          icon={<CalendarDays size={16} color="#8a6d00" />}
           label="Data de nascimento"
           value={dataNascimento}
           displayValue={formatDateDisplay(dataNascimento)}
           onChange={setDataNascimento}
           inputType="date"
         />
-
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "12px", marginTop: "16px" }}>
-          {saveError   && <p style={{ margin: 0, fontSize: "13px", color: "#e53e3e" }}>{saveError}</p>}
-          {saveSuccess && <p style={{ margin: 0, fontSize: "13px", color: "#2e7d32" }}>✓ Salvo com sucesso</p>}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              backgroundColor: "#F5C518", border: "none", borderRadius: "8px",
-              padding: "8px 20px", fontWeight: "600", fontSize: "14px",
-              cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1,
-            }}
-          >
-            {saving ? "Salvando..." : "Salvar alterações"}
-          </button>
-        </div>
       </div>
 
       {/* Eventos recentes */}
@@ -229,72 +238,120 @@ export function ProfileView({ profile, onUpdate }: Props) {
           ))}
         </div>
       </div>
+
+      {/* Botão salvar */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "12px", marginTop: "4px", marginBottom: "32px" }}>
+        {saveError && <p style={{ margin: 0, fontSize: "13px", color: "#e53e3e" }}>{saveError}</p>}
+        {saveSuccess && <p style={{ margin: 0, fontSize: "13px", color: "#2e7d32" }}>✓ Salvo com sucesso</p>}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            backgroundColor: PRIMARY_YELLOW,
+            border: "none",
+            borderRadius: "8px",
+            padding: "10px 24px",
+            fontWeight: "600",
+            fontSize: "14px",
+            cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}
+        >
+          {saving ? "Salvando..." : "Salvar alterações"}
+        </button>
+      </div>
     </div>
   )
 }
 
-// ── InfoRow ───────────────────────────────────────────────────────────────────
+function Divider() {
+  return <div style={{ height: "1px", background: "#f0f0f0" }} />
+}
+
 function InfoRow({
-  icon, label, value, displayValue, onChange, inputType = "text",
+  icon,
+  label,
+  value,
+  displayValue,
+  onChange,
+  inputType = "text",
+  readOnly = false,
+  placeholder,
 }: {
-  icon: string
+  icon: ReactNode
   label: string
   value: string
   displayValue?: string
-  onChange: (v: string) => void
+  onChange?: (v: string) => void
   inputType?: string
+  readOnly?: boolean
+  placeholder?: string
 }) {
   const [editing, setEditing] = useState(false)
 
   return (
     <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      background: "#f9f9f9", borderRadius: "8px", padding: "12px 14px", margin: "6px 0",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      background: "#f9f9f9",
+      borderRadius: "8px",
+      padding: "12px 14px",
+      margin: "6px 0",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
         <span style={{
-          width: "32px", height: "32px", background: "#fdf6dc", borderRadius: "8px",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "16px", flexShrink: 0,
+          width: "32px",
+          height: "32px",
+          background: "#fdf6dc",
+          borderRadius: "8px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
         }}>
           {icon}
         </span>
         <div>
           <p style={{ margin: 0, fontSize: "11px", color: "#aaa" }}>{label}</p>
-          {editing ? (
+          {editing && !readOnly ? (
             <input
               autoFocus
               type={inputType}
               value={value}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={(e) => onChange?.(e.target.value)}
               onBlur={() => setEditing(false)}
               onKeyDown={(e) => e.key === "Enter" && setEditing(false)}
+              placeholder={placeholder}
               style={{
-                border: "none", borderBottom: "1px solid #F5C518", outline: "none",
-                fontSize: "14px", fontWeight: "500", background: "transparent",
-                padding: "2px 0", width: "260px",
+                border: "none",
+                borderBottom: `1px solid ${PRIMARY_YELLOW}`,
+                outline: "none",
+                fontSize: "14px",
+                fontWeight: "500",
+                background: "transparent",
+                padding: "2px 0",
+                width: "260px",
               }}
             />
           ) : (
-            <p style={{ margin: 0, fontSize: "14px", fontWeight: "500" }}>
-              {displayValue ?? value ?? "—"}
+            <p style={{ margin: 0, fontSize: "14px", fontWeight: "500", color: readOnly ? "#999" : "#1a1a1a" }}>
+              {(displayValue ?? value) || (readOnly ? "" : <span style={{ color: "#bbb" }}>{placeholder ?? "—"}</span>)}
             </p>
           )}
         </div>
       </div>
-      <button
-        onClick={() => setEditing((e) => !e)}
-        style={{ background: "none", border: "none", cursor: "pointer", color: "#bbb", fontSize: "15px", padding: "4px" }}
-        title="Editar"
-      >
-        ✏️
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => setEditing((prev) => !prev)}
+          title="Editar"
+          style={{ background: "none", border: "none", cursor: "pointer", color: "#bbb", fontSize: "15px", padding: "4px" }}
+        >
+          ✏️
+        </button>
+      )}
     </div>
   )
-}
-
-const cardStyle: CSSProperties = {
-  display: "flex", alignItems: "center", gap: "20px",
-  border: "1px solid #e8e8e8", borderRadius: "12px",
-  padding: "20px 24px", marginBottom: "20px", backgroundColor: "#fff",
 }
