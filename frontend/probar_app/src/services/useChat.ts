@@ -73,6 +73,19 @@ export type Chat = {
   criado_em: string
 }
 
+export type ChatPage = {
+  results: Chat[]
+  next: string | null
+  count: number | null
+}
+
+type PaginatedResponse<T> = {
+  count?: number
+  next?: string | null
+  previous?: string | null
+  results?: T[]
+}
+
 // ─── Helper: busca token via rota interna (mesma lógica do api.ts) ────────────
 
 async function getToken(): Promise<string | null> {
@@ -124,18 +137,54 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+function buildChatPath({ pedidoId, page }: { pedidoId?: number; page?: number } = {}) {
+  const params = new URLSearchParams()
+  if (pedidoId) params.set("pedido", String(pedidoId))
+  if (page && page > 1) params.set("page", String(page))
+
+  const query = params.toString()
+  return `/chats/${query ? `?${query}` : ""}`
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useChat() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Buscar chats — suporta resposta paginada { count, results } e array direto
-  const getChats = useCallback(async (pedidoId?: number): Promise<Chat[]> => {
-    const query = pedidoId ? `?pedido=${encodeURIComponent(String(pedidoId))}` : ""
-    const data = await apiFetch<Chat[] | { count: number; results: Chat[] }>(`/chats/${query}`)
-    return Array.isArray(data) ? data : (data.results ?? [])
+  const getChatsPage = useCallback(async ({
+    pedidoId,
+    page = 1,
+  }: {
+    pedidoId?: number
+    page?: number
+  } = {}): Promise<ChatPage> => {
+    const data = await apiFetch<Chat[] | PaginatedResponse<Chat>>(buildChatPath({ pedidoId, page }))
+    if (Array.isArray(data)) {
+      return { results: data, next: null, count: data.length }
+    }
+
+    return {
+      results: data.results ?? [],
+      next: data.next ?? null,
+      count: typeof data.count === "number" ? data.count : null,
+    }
   }, [])
+
+  // Buscar chats — mantem compatibilidade e percorre todas as paginas quando usado diretamente.
+  const getChats = useCallback(async (pedidoId?: number): Promise<Chat[]> => {
+    const all: Chat[] = []
+    let page = 1
+
+    for (let guard = 0; guard < 50; guard += 1) {
+      const data = await getChatsPage({ pedidoId, page })
+      all.push(...data.results)
+      if (!data.next) break
+      page += 1
+    }
+
+    return all
+  }, [getChatsPage])
 
   // Buscar mensagens de um chat específico
   const getChat = useCallback(async (chatId: number): Promise<Chat> => {
@@ -215,6 +264,7 @@ export function useChat() {
     loading,
     error,
     getChats,
+    getChatsPage,
     getChat,
     getMensagens,
     enviarMensagem,

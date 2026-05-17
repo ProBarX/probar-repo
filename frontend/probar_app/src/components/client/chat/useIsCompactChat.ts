@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react"
 
 export function useIsCompactChat() {
-  const [isCompact, setIsCompact] = useState(false)
+  const [isCompact, setIsCompact] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 760 : false
+  )
 
   useEffect(() => {
     const update = () => setIsCompact(window.innerWidth < 760)

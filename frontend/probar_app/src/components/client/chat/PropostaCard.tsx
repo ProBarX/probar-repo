@@ -4,7 +4,7 @@ import { Ban, Check, ClipboardList, RotateCcw, X } from "lucide-react"
 import {
   chatCardBorder,
   chatCardShellStyle,
-  probarBlue,
+  probarBlack,
   probarYellow,
   probarYellowBorder,
 } from "@/components/client/chat/chatStyles"
@@ -48,7 +48,7 @@ const statusStyle: Record<PropostaStatus, React.CSSProperties> = {
   ACEITA: { background: "#EAF3DE", color: "#3B6D11", border: "0.5px solid #97C459" },
   RECUSADA: { background: "#FCEBEB", color: "#A32D2D", border: "0.5px solid #E24B4A" },
   CANCELADA: { background: "#F1EFE8", color: "#5F5E5A", border: "0.5px solid #B4B2A9" },
-  SUBSTITUIDA: { background: "#E9F1F9", color: probarBlue, border: "0.5px solid #B9D1EA" },
+  SUBSTITUIDA: { background: "#F5F5F5", color: probarBlack, border: "0.5px solid #21242C" },
 }
 
 function money(value: number | string) {
@@ -131,9 +131,9 @@ export function PropostaCard({
                 alignItems: "center",
                 gap: 6,
                 fontSize: "12px",
-                color: probarBlue,
-                background: "#F1F6FB",
-                border: "0.5px solid #C8DBEE",
+                color: probarBlack,
+                background: "#F5F5F5",
+                border: "0.5px solid #21242C",
                 borderRadius: "20px",
                 padding: "4px 9px",
                 margin: 0,
@@ -202,7 +202,7 @@ export function PropostaCard({
           <p style={{ fontSize: "14px", color: "#777", margin: "10px 0 0" }}>Proposta cancelada.</p>
         )}
         {status === "SUBSTITUIDA" && (
-          <p style={{ fontSize: "14px", color: probarBlue, margin: "10px 0 0" }}>
+          <p style={{ fontSize: "14px", color: probarBlack, margin: "10px 0 0" }}>
             Proposta substituida por nova versao.
           </p>
         )}
@@ -252,8 +252,8 @@ function Pill({ label, tone }: { label: string; tone: "discount" | "additional" 
         borderRadius: "20px",
         padding: "4px 9px",
         background: isDiscount ? "#F4FAEC" : "#F1F6FB",
-        color: isDiscount ? "#3B6D11" : probarBlue,
-        border: isDiscount ? "0.5px solid #B7D987" : "0.5px solid #C8DBEE",
+        color: isDiscount ? probarBlack : probarBlack,
+        border: isDiscount ? "0.5px solid #acacac" : "0.5px solid #C8DBEE",
       }}
     >
       {label}

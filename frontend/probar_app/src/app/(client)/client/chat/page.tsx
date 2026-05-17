@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, type UIEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AlertCircle, ArrowLeft, MessageCircle, Send, X } from "lucide-react"
 import { PropostaCard, type Proposta } from "@/components/client/chat/PropostaCard"
@@ -9,10 +9,10 @@ import { ChatAvatar } from "@/components/client/chat/ChatAvatar"
 import { ChatEventoCard, type EventoChatDetails } from "@/components/client/chat/ChatEventoCard"
 import { ChatNextStepBanner } from "@/components/client/chat/ChatNextStepBanner"
 import { ChatStatusBadge } from "@/components/client/chat/ChatStatusBadge"
+import { ChatSystemMessage } from "@/components/client/chat/ChatSystemMessage"
 import { chatCardContainerStyle } from "@/components/client/chat/chatStyles"
 import { useIsCompactChat } from "@/components/client/chat/useIsCompactChat"
 import { useChat, type Chat, type Mensagem } from "@/services/useChat"
-import { api } from "@/services/api"
 import { getPedidoDisplayNumber, resolvePedidoVisualStatus } from "@/lib/chat-status"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -21,13 +21,6 @@ type ChatEnriquecido = Chat & {
   bartender_nome: string
   bartender_especialidade: string
   evento_nome: string
-}
-
-type PedidoResumo = {
-  id: number
-  bartender_nome?: string
-  bartender_especialidade?: string
-  evento_nome?: string
 }
 
 type PropostaPayload = {
@@ -58,10 +51,6 @@ type EventoPayload = {
 
 const avatarColors = ["#3C3489", "#0F6E56", "#993C1D", "#185FA5", "#854F0B"]
 const CHAT_HEADER_HEIGHT = 69
-
-function getResults<T>(data: T[] | { results?: T[] }): T[] {
-  return Array.isArray(data) ? data : data.results ?? []
-}
 
 function parsePedidoParam(value: string | null) {
   const parsed = Number(value)
@@ -130,6 +119,32 @@ function getActionErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+function mergeMessages(existing: Mensagem[], incoming: Mensagem[]) {
+  const byId = new Map<number, Mensagem>()
+  existing.forEach((msg) => byId.set(msg.id, msg))
+  incoming.forEach((msg) => byId.set(msg.id, msg))
+
+  return [...byId.values()].sort((a, b) => {
+    const byDate = new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime()
+    return byDate !== 0 ? byDate : a.id - b.id
+  })
+}
+
+function mergeChatsById(existing: ChatEnriquecido[], incoming: ChatEnriquecido[]) {
+  const incomingById = new Map(incoming.map((chat) => [chat.id, chat]))
+  const existingIds = new Set(existing.map((chat) => chat.id))
+
+  return [
+    ...existing.map((chat) => {
+      const updated = incomingById.get(chat.id)
+      return updated
+        ? { ...chat, ...updated, mensagens: mergeMessages(chat.mensagens, updated.mensagens) }
+        : chat
+    }),
+    ...incoming.filter((chat) => !existingIds.has(chat.id)),
+  ]
+}
+
 async function getCurrentUserId(): Promise<number> {
   try {
     const res = await fetch("/api/auth/get-token")
@@ -151,7 +166,7 @@ export default function ClientChatPage() {
   const pedidoParam = searchParams.get("pedido")
   const pedidoIdParam = parsePedidoParam(pedidoParam)
   const {
-    getChats,
+    getChatsPage,
     getChat,
     getMensagens,
     enviarMensagem,
@@ -168,8 +183,10 @@ export default function ClientChatPage() {
   const [texto, setTexto] = useState("")
   const [counterParaId, setCounterParaId] = useState<number | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
+  const [loadingMoreChats, setLoadingMoreChats] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [nextChatsPage, setNextChatsPage] = useState<number | null>(null)
   const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(pedidoIdParam))
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -197,37 +214,47 @@ export default function ClientChatPage() {
     }
   }, [isCompact, pedidoIdParam])
 
-  // Carrega chats e enriquece com dados do bartender vindos do PedidoSerializer
+  useEffect(() => {
+    const open = isCompact && mobileChatOpen
+    document.body.dataset.probarChatMobileOpen = open ? "true" : "false"
+    window.dispatchEvent(new CustomEvent("probar:chat-mobile-state", { detail: { open } }))
+  }, [isCompact, mobileChatOpen])
+
+  useEffect(() => {
+    return () => {
+      document.body.dataset.probarChatMobileOpen = "false"
+      window.dispatchEvent(new CustomEvent("probar:chat-mobile-state", { detail: { open: false } }))
+    }
+  }, [])
+
+  const enrichChats = useCallback((items: Chat[]): ChatEnriquecido[] => {
+    return items.map((chat) => ({
+      ...chat,
+      bartender_nome: chat.bartender_nome?.trim() || "Bartender",
+      bartender_especialidade: chat.bartender_especialidade ?? "",
+      evento_nome: chat.evento_nome ?? "",
+    }))
+  }, [])
+
+  // Carrega chats e preserva a paginacao da API.
   const carregarChats = useCallback(async () => {
     try {
-      const data = await getChats()
-      let chatsData = data
+      const pageData = await getChatsPage({ page: 1 })
+      let chatsData = pageData.results
 
-      if (pedidoIdParam && !data.some((chat) => chat.pedido === pedidoIdParam)) {
-        const chatDoPedido = await getChats(pedidoIdParam)
-        const idsDoPedido = new Set(chatDoPedido.map((chat) => chat.id))
+      if (pedidoIdParam && !chatsData.some((chat) => chat.pedido === pedidoIdParam)) {
+        const chatDoPedido = await getChatsPage({ pedidoId: pedidoIdParam, page: 1 })
+        const idsDoPedido = new Set(chatDoPedido.results.map((chat) => chat.id))
         chatsData = [
-          ...chatDoPedido,
-          ...data.filter((chat) => !idsDoPedido.has(chat.id)),
+          ...chatDoPedido.results,
+          ...chatsData.filter((chat) => !idsDoPedido.has(chat.id)),
         ]
       }
 
-      const { data: pedidosRaw } = await api.get<PedidoResumo[] | { results?: PedidoResumo[] }>("/pedidos/")
-      const pedidos = getResults(pedidosRaw)
-
-      const enriquecidos: ChatEnriquecido[] = chatsData.map((c) => {
-        const pedido = pedidos.find((p) => p.id === c.pedido)
-        const bartenderNome = c.bartender_nome?.trim() || pedido?.bartender_nome?.trim() || "Bartender"
-
-        return {
-          ...c,
-          bartender_nome: bartenderNome,
-          bartender_especialidade: c.bartender_especialidade ?? pedido?.bartender_especialidade ?? "",
-          evento_nome: c.evento_nome ?? pedido?.evento_nome ?? "",
-        }
-      })
+      const enriquecidos = enrichChats(chatsData)
 
       setChats(enriquecidos)
+      setNextChatsPage(pageData.next ? 2 : null)
       setSelectedIdx((current) => {
         if (pedidoIdParam) {
           const index = enriquecidos.findIndex((chat) => chat.pedido === pedidoIdParam)
@@ -243,7 +270,36 @@ export default function ClientChatPage() {
     } finally {
       setLoadingChats(false)
     }
-  }, [getChats, pedidoIdParam])
+  }, [enrichChats, getChatsPage, pedidoIdParam])
+
+  const carregarMaisChats = useCallback(async () => {
+    if (!nextChatsPage || loadingMoreChats) return
+
+    setLoadingMoreChats(true)
+    try {
+      const pageData = await getChatsPage({ page: nextChatsPage })
+      const enriquecidos = enrichChats(pageData.results)
+      setChats((prev) => mergeChatsById(prev, enriquecidos))
+      setNextChatsPage(pageData.next ? nextChatsPage + 1 : null)
+    } catch {
+      setActionError("Nao foi possivel carregar conversas antigas.")
+    } finally {
+      setLoadingMoreChats(false)
+    }
+  }, [enrichChats, getChatsPage, loadingMoreChats, nextChatsPage])
+
+  const handleChatListScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (!nextChatsPage || loadingMoreChats) return
+
+      const element = event.currentTarget
+      const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+      if (distanceFromBottom < 120) {
+        void carregarMaisChats()
+      }
+    },
+    [carregarMaisChats, loadingMoreChats, nextChatsPage]
+  )
 
   useEffect(() => {
     carregarChats()
@@ -297,6 +353,7 @@ export default function ClientChatPage() {
                   bartender_nome: chatAtualizado.bartender_nome?.trim() || c.bartender_nome,
                   bartender_especialidade: chatAtualizado.bartender_especialidade ?? c.bartender_especialidade,
                   evento_nome: chatAtualizado.evento_nome ?? c.evento_nome,
+                  mensagens: mergeMessages(c.mensagens, chatAtualizado.mensagens),
                 }
               : c
           )
@@ -379,7 +436,7 @@ export default function ClientChatPage() {
       // Recarrega mensagens para exibir a nova proposta vinda do backend
       const mensagens = await getMensagens(chats[selectedIdx].id)
       setChats((prev) =>
-        prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens } : c))
+        prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens: mergeMessages(c.mensagens, mensagens) } : c))
       )
     } catch (err) {
       setActionError(getActionErrorMessage(err, "Nao foi possivel enviar a contraproposta."))
@@ -413,7 +470,14 @@ export default function ClientChatPage() {
     )
 
     try {
-      await enviarMensagem(chatId, conteudo)
+      const enviada = await enviarMensagem(chatId, conteudo)
+      setChats((prev) =>
+        prev.map((c, i) =>
+          i === selectedIdx
+            ? { ...c, mensagens: mergeMessages(c.mensagens.filter((m) => m.id !== temp.id), [enviada]) }
+            : c
+        )
+      )
     } catch {
       // Reverte em caso de erro
       setChats((prev) =>
@@ -462,6 +526,10 @@ export default function ClientChatPage() {
   const renderMensagem = (msg: Mensagem) => {
     // const isOwn = msg.remetente !== null && msg.remetente === currentUserId
     const isOwn = Number(msg.remetente) === Number(currentUserId)
+    if (msg.tipo === "status_update" || (msg.tipo === "texto" && msg.remetente === null)) {
+      return <ChatSystemMessage key={msg.id} conteudo={msg.conteudo} criadoEm={msg.criado_em} />
+    }
+
     if (msg.tipo === "texto") {
       return (
         <div
@@ -544,30 +612,6 @@ export default function ClientChatPage() {
           evento={getEventoDetails(p, chats[selectedIdx])}
           align="right"
         />
-      )
-    }
-
-    if (msg.tipo === "status_update") {
-      return (
-        <div
-          key={msg.id}
-          style={{
-            alignSelf: isOwn ? "flex-end" : "flex-start",
-            background: "#fff",
-            border: "0.5px solid #eee",
-            borderRadius: "10px",
-            padding: "8px 11px",
-            fontSize: "12px",
-            color: "#777",
-            fontWeight: 400,
-            width: "min(100%, 392px)",
-            maxWidth: "100%",
-            boxSizing: "border-box",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-          }}
-        >
-          {msg.conteudo}
-        </div>
       )
     }
 
@@ -707,9 +751,10 @@ export default function ClientChatPage() {
         </div>
 
         {/* Lista de chats */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ flex: 1, overflowY: "auto" }} onScroll={handleChatListScroll}>
           {chats.map((c, i) => {
             const ultima = c.mensagens.at(-1)
+            const pedidoNumero = getPedidoDisplayNumber(c.pedido_resumo, c.pedido)
             const preview =
               ultima?.tipo === "card_proposta"
                 ? "Proposta enviada"
@@ -744,15 +789,44 @@ export default function ClientChatPage() {
                 />
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
+                  <div
                     style={{
-                      fontWeight: 600,
-                      fontSize: "15px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
                       margin: "0 0 2px",
+                      minWidth: 0,
                     }}
                   >
-                    {c.bartender_nome}
-                  </p>
+                    <p
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontWeight: 600,
+                        fontSize: "15px",
+                        margin: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {c.bartender_nome}
+                    </p>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: "2px 6px",
+                        borderRadius: "999px",
+                        border: "0.5px solid #eee",
+                        background: "#fafafa",
+                        color: "#777",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      #{pedidoNumero}
+                    </span>
+                  </div>
                   <p
                     style={{
                       fontSize: "13px",
@@ -769,6 +843,30 @@ export default function ClientChatPage() {
               </div>
             )
           })}
+          {loadingMoreChats && (
+            <div style={{ padding: "12px 16px", textAlign: "center", color: "#999", fontSize: "12px" }}>
+              Carregando conversas...
+            </div>
+          )}
+          {nextChatsPage && !loadingMoreChats && (
+            <button
+              type="button"
+              onClick={carregarMaisChats}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                border: "none",
+                borderTop: "1px solid #f5f5f5",
+                background: "#fff",
+                color: "#777",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Carregar mais conversas
+            </button>
+          )}
         </div>
       </div>
 
@@ -777,6 +875,7 @@ export default function ClientChatPage() {
         style={{
           display: showConversation ? "flex" : "none",
           flex: 1,
+          width: isCompact ? "100%" : undefined,
           flexDirection: "column",
           minWidth: 0,
           minHeight: 0,

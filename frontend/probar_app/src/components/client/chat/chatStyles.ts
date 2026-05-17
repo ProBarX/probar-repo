@@ -26,4 +26,4 @@ export function chatCardContainerStyle(align: ChatAlign = "right"): CSSPropertie
 export const chatCardBorder = "0.5px solid #eee"
 export const probarYellow = "#F5C518"
 export const probarYellowBorder = "#EF9F27"
-export const probarBlue = "#185FA5"
+export const probarBlack = "#21242C"

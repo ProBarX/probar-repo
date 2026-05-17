@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, type UIEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AlertCircle, ArrowLeft, MessageCircle, Send, X } from "lucide-react"
 import { PropostaCard, type Proposta } from "@/components/client/chat/PropostaCard"
@@ -9,10 +9,10 @@ import { ChatAvatar } from "@/components/client/chat/ChatAvatar"
 import { ChatEventoCard, type EventoChatDetails } from "@/components/client/chat/ChatEventoCard"
 import { ChatNextStepBanner } from "@/components/client/chat/ChatNextStepBanner"
 import { ChatStatusBadge } from "@/components/client/chat/ChatStatusBadge"
+import { ChatSystemMessage } from "@/components/client/chat/ChatSystemMessage"
 import { chatCardContainerStyle } from "@/components/client/chat/chatStyles"
 import { useIsCompactChat } from "@/components/client/chat/useIsCompactChat"
 import { useChat, type Chat, type Mensagem } from "@/services/useChat"
-import { api } from "@/services/api"
 import { getPedidoDisplayNumber, resolvePedidoVisualStatus } from "@/lib/chat-status"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -20,12 +20,6 @@ import { getPedidoDisplayNumber, resolvePedidoVisualStatus } from "@/lib/chat-st
 type ChatEnriquecido = Chat & {
   cliente_nome: string
   evento_nome: string
-}
-
-type PedidoResumo = {
-  id: number
-  cliente_nome?: string
-  evento_nome?: string
 }
 
 type PropostaPayload = {
@@ -56,10 +50,6 @@ type EventoPayload = {
 
 const avatarColors = ["#3C3489", "#0F6E56", "#993C1D", "#185FA5", "#854F0B"]
 const CHAT_HEADER_HEIGHT = 69
-
-function getResults<T>(data: T[] | { results?: T[] }): T[] {
-  return Array.isArray(data) ? data : data.results ?? []
-}
 
 function parsePedidoParam(value: string | null) {
   const parsed = Number(value)
@@ -128,6 +118,32 @@ function getActionErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+function mergeMessages(existing: Mensagem[], incoming: Mensagem[]) {
+  const byId = new Map<number, Mensagem>()
+  existing.forEach((msg) => byId.set(msg.id, msg))
+  incoming.forEach((msg) => byId.set(msg.id, msg))
+
+  return [...byId.values()].sort((a, b) => {
+    const byDate = new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime()
+    return byDate !== 0 ? byDate : a.id - b.id
+  })
+}
+
+function mergeChatsById(existing: ChatEnriquecido[], incoming: ChatEnriquecido[]) {
+  const incomingById = new Map(incoming.map((chat) => [chat.id, chat]))
+  const existingIds = new Set(existing.map((chat) => chat.id))
+
+  return [
+    ...existing.map((chat) => {
+      const updated = incomingById.get(chat.id)
+      return updated
+        ? { ...chat, ...updated, mensagens: mergeMessages(chat.mensagens, updated.mensagens) }
+        : chat
+    }),
+    ...incoming.filter((chat) => !existingIds.has(chat.id)),
+  ]
+}
+
 async function getCurrentUserId(): Promise<number> {
   try {
     const res = await fetch("/api/auth/get-token")
@@ -149,7 +165,7 @@ export default function BartenderChatPage() {
   const pedidoParam = searchParams.get("pedido")
   const pedidoIdParam = parsePedidoParam(pedidoParam)
   const {
-    getChats,
+    getChatsPage,
     getChat,
     getMensagens,
     enviarMensagem,
@@ -166,8 +182,10 @@ export default function BartenderChatPage() {
   const [texto, setTexto] = useState("")
   const [counterParaId, setCounterParaId] = useState<number | null>(null)
   const [loadingChats, setLoadingChats] = useState(true)
+  const [loadingMoreChats, setLoadingMoreChats] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [nextChatsPage, setNextChatsPage] = useState<number | null>(null)
   const [mobileChatOpen, setMobileChatOpen] = useState(Boolean(pedidoIdParam))
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -194,35 +212,46 @@ export default function BartenderChatPage() {
     }
   }, [isCompact, pedidoIdParam])
 
-  // Carrega chats e enriquece com cliente_nome e evento_nome do PedidoSerializer
+  useEffect(() => {
+    const open = isCompact && mobileChatOpen
+    document.body.dataset.probarChatMobileOpen = open ? "true" : "false"
+    window.dispatchEvent(new CustomEvent("probar:chat-mobile-state", { detail: { open } }))
+  }, [isCompact, mobileChatOpen])
+
+  useEffect(() => {
+    return () => {
+      document.body.dataset.probarChatMobileOpen = "false"
+      window.dispatchEvent(new CustomEvent("probar:chat-mobile-state", { detail: { open: false } }))
+    }
+  }, [])
+
+  const enrichChats = useCallback((items: Chat[]): ChatEnriquecido[] => {
+    return items.map((chat) => ({
+      ...chat,
+      cliente_nome: chat.cliente_nome?.trim() || "Cliente",
+      evento_nome: chat.evento_nome ?? "",
+    }))
+  }, [])
+
+  // Carrega chats e preserva a paginacao da API.
   const carregarChats = useCallback(async () => {
     try {
-      const data = await getChats()
-      let chatsData = data
+      const pageData = await getChatsPage({ page: 1 })
+      let chatsData = pageData.results
 
-      if (pedidoIdParam && !data.some((chat) => chat.pedido === pedidoIdParam)) {
-        const chatDoPedido = await getChats(pedidoIdParam)
-        const idsDoPedido = new Set(chatDoPedido.map((chat) => chat.id))
+      if (pedidoIdParam && !chatsData.some((chat) => chat.pedido === pedidoIdParam)) {
+        const chatDoPedido = await getChatsPage({ pedidoId: pedidoIdParam, page: 1 })
+        const idsDoPedido = new Set(chatDoPedido.results.map((chat) => chat.id))
         chatsData = [
-          ...chatDoPedido,
-          ...data.filter((chat) => !idsDoPedido.has(chat.id)),
+          ...chatDoPedido.results,
+          ...chatsData.filter((chat) => !idsDoPedido.has(chat.id)),
         ]
       }
 
-      const { data: pedidosRaw } = await api.get<PedidoResumo[] | { results?: PedidoResumo[] }>("/pedidos/")
-      const pedidos = getResults(pedidosRaw)
-
-      const enriquecidos: ChatEnriquecido[] = chatsData.map((c) => {
-        const pedido = pedidos.find((p) => p.id === c.pedido)
-        const clienteNome = c.cliente_nome?.trim() || pedido?.cliente_nome?.trim() || "Cliente"
-        return {
-          ...c,
-          cliente_nome: clienteNome,
-          evento_nome: c.evento_nome ?? pedido?.evento_nome ?? "",
-        }
-      })
+      const enriquecidos = enrichChats(chatsData)
 
       setChats(enriquecidos)
+      setNextChatsPage(pageData.next ? 2 : null)
       setSelectedIdx((current) => {
         if (pedidoIdParam) {
           const index = enriquecidos.findIndex((chat) => chat.pedido === pedidoIdParam)
@@ -238,7 +267,36 @@ export default function BartenderChatPage() {
     } finally {
       setLoadingChats(false)
     }
-  }, [getChats, pedidoIdParam])
+  }, [enrichChats, getChatsPage, pedidoIdParam])
+
+  const carregarMaisChats = useCallback(async () => {
+    if (!nextChatsPage || loadingMoreChats) return
+
+    setLoadingMoreChats(true)
+    try {
+      const pageData = await getChatsPage({ page: nextChatsPage })
+      const enriquecidos = enrichChats(pageData.results)
+      setChats((prev) => mergeChatsById(prev, enriquecidos))
+      setNextChatsPage(pageData.next ? nextChatsPage + 1 : null)
+    } catch {
+      setActionError("Nao foi possivel carregar conversas antigas.")
+    } finally {
+      setLoadingMoreChats(false)
+    }
+  }, [enrichChats, getChatsPage, loadingMoreChats, nextChatsPage])
+
+  const handleChatListScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (!nextChatsPage || loadingMoreChats) return
+
+      const element = event.currentTarget
+      const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+      if (distanceFromBottom < 120) {
+        void carregarMaisChats()
+      }
+    },
+    [carregarMaisChats, loadingMoreChats, nextChatsPage]
+  )
 
   useEffect(() => {
     carregarChats()
@@ -291,6 +349,7 @@ export default function BartenderChatPage() {
                   ...chatAtualizado,
                   cliente_nome: chatAtualizado.cliente_nome?.trim() || c.cliente_nome,
                   evento_nome: chatAtualizado.evento_nome ?? c.evento_nome,
+                  mensagens: mergeMessages(c.mensagens, chatAtualizado.mensagens),
                 }
               : c
           )
@@ -371,7 +430,7 @@ export default function BartenderChatPage() {
       setCounterParaId(null)
       const mensagens = await getMensagens(chats[selectedIdx].id)
       setChats((prev) =>
-        prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens } : c))
+        prev.map((c, i) => (i === selectedIdx ? { ...c, mensagens: mergeMessages(c.mensagens, mensagens) } : c))
       )
     } catch (err) {
       setActionError(getActionErrorMessage(err, "Nao foi possivel enviar a contraproposta."))
@@ -404,7 +463,14 @@ export default function BartenderChatPage() {
     )
 
     try {
-      await enviarMensagem(chatId, conteudo)
+      const enviada = await enviarMensagem(chatId, conteudo)
+      setChats((prev) =>
+        prev.map((c, i) =>
+          i === selectedIdx
+            ? { ...c, mensagens: mergeMessages(c.mensagens.filter((m) => m.id !== temp.id), [enviada]) }
+            : c
+        )
+      )
     } catch {
       setChats((prev) =>
         prev.map((c, i) =>
@@ -452,6 +518,10 @@ export default function BartenderChatPage() {
   const renderMensagem = (msg: Mensagem) => {
     // const isOwn = msg.remetente !== null && msg.remetente === currentUserId
     const isOwn = Number(msg.remetente) === Number(currentUserId)
+    if (msg.tipo === "status_update" || (msg.tipo === "texto" && msg.remetente === null)) {
+      return <ChatSystemMessage key={msg.id} conteudo={msg.conteudo} criadoEm={msg.criado_em} />
+    }
+
     if (msg.tipo === "texto") {
       return (
         <div
@@ -537,30 +607,6 @@ export default function BartenderChatPage() {
       )
     }
 
-    if (msg.tipo === "status_update") {
-      return (
-        <div
-          key={msg.id}
-          style={{
-            alignSelf: isOwn ? "flex-end" : "flex-start",
-            background: "#fff",
-            border: "0.5px solid #eee",
-            borderRadius: "10px",
-            padding: "8px 11px",
-            fontSize: "12px",
-            color: "#777",
-            fontWeight: 400,
-            width: "min(100%, 392px)",
-            maxWidth: "100%",
-            boxSizing: "border-box",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-          }}
-        >
-          {msg.conteudo}
-        </div>
-      )
-    }
-
     return null
   }
 
@@ -609,9 +655,10 @@ export default function BartenderChatPage() {
           <span style={{ fontWeight: 600, fontSize: "15px" }}>Negociações</span>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ flex: 1, overflowY: "auto" }} onScroll={handleChatListScroll}>
           {chats.map((c, i) => {
             const ultima = c.mensagens.at(-1)
+            const pedidoNumero = getPedidoDisplayNumber(c.pedido_resumo, c.pedido)
             const preview =
               ultima?.tipo === "card_proposta" ? "Proposta enviada"
               : ultima?.tipo === "status_update" ? ultima.conteudo
@@ -627,17 +674,57 @@ export default function BartenderChatPage() {
                   color={avatarColors[i % avatarColors.length]}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontWeight: 600, fontSize: "15px", margin: "0 0 2px" }}>{c.cliente_nome}</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 0 2px", minWidth: 0 }}>
+                    <p style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: "15px", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.cliente_nome}</p>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        padding: "2px 6px",
+                        borderRadius: "999px",
+                        border: "0.5px solid #eee",
+                        background: "#fafafa",
+                        color: "#777",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      #{pedidoNumero}
+                    </span>
+                  </div>
                   <p style={{ fontSize: "13px", color: "#999", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}</p>
                 </div>
               </div>
             )
           })}
+          {loadingMoreChats && (
+            <div style={{ padding: "12px 16px", textAlign: "center", color: "#999", fontSize: "12px" }}>
+              Carregando conversas...
+            </div>
+          )}
+          {nextChatsPage && !loadingMoreChats && (
+            <button
+              type="button"
+              onClick={carregarMaisChats}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                border: "none",
+                borderTop: "1px solid #f5f5f5",
+                background: "#fff",
+                color: "#777",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Carregar mais conversas
+            </button>
+          )}
         </div>
       </div>
 
       {/* Área do chat */}
-      <div style={{ flex: 1, display: showConversation ? "flex" : "none", flexDirection: "column", minWidth: 0, minHeight: 0, background: "#fff" }}>
+      <div style={{ flex: 1, width: isCompact ? "100%" : undefined, display: showConversation ? "flex" : "none", flexDirection: "column", minWidth: 0, minHeight: 0, background: "#fff" }}>
 
         {/* Header */}
         <div style={{ height: "auto", minHeight: CHAT_HEADER_HEIGHT, boxSizing: "border-box", flexShrink: 0, position: "relative", zIndex: 2, padding: isCompact ? "12px 14px" : "14px 24px", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>

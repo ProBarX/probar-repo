@@ -5,7 +5,7 @@ import { Calculator, Minus, Plus, RotateCcw, Send, X } from "lucide-react"
 import {
   chatCardBorder,
   chatCardShellStyle,
-  probarBlue,
+  probarBlack,
   probarYellow,
   probarYellowBorder,
 } from "@/components/client/chat/chatStyles"
@@ -78,7 +78,7 @@ export function CounterPropostaForm({
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
-        <RotateCcw size={17} color={probarBlue} style={{ flexShrink: 0, marginTop: 1 }} />
+        <RotateCcw size={17} color={probarBlack} style={{ flexShrink: 0, marginTop: 1 }} />
         <div>
           <p style={{ fontSize: "15px", fontWeight: 700, margin: 0 }}>Contraproposta para esta proposta</p>
           <p style={{ fontSize: "13px", color: "#777", margin: "3px 0 0", lineHeight: 1.4 }}>
