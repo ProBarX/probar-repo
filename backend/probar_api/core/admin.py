@@ -16,7 +16,9 @@ from .models import (
     Mensagem,
     Avaliacao,
     Pagamento,
+    SolicitacaoReembolso,
 )
+from core.services import reembolso_service
 
 
 class SoftDeleteAdmin(admin.ModelAdmin):
@@ -208,3 +210,50 @@ class PagamentoAdmin(SoftDeleteAdmin):
     list_display = ('id', 'pedido', 'valor', 'metodo_pagamento', 'status', 'data_pagamento')
     search_fields = ('pedido__id',)
     list_filter = ('metodo_pagamento', 'status')
+
+
+@admin.register(SolicitacaoReembolso)
+class SolicitacaoReembolsoAdmin(SoftDeleteAdmin):
+    list_display = ('id', 'pedido', 'cliente', 'bartender', 'tipo', 'motivo', 'status', 'valor_solicitado', 'valor_aprovado', 'stripe_status', 'criado_em')
+    search_fields = ('pedido__id', 'cliente__user__email', 'bartender__user__email')
+    list_filter = ('tipo', 'motivo', 'status', 'stripe_status')
+    readonly_fields = (
+        'stripe_payment_intent_id',
+        'stripe_status',
+        'stripe_idempotency_key',
+        'stripe_erro',
+        'execucao_financeira_iniciada_em',
+        'execucao_financeira_concluida_em',
+        'criado_em',
+        'atualizado_em',
+    )
+    actions = ['executar_cancelamento_autorizacao']
+
+    def executar_cancelamento_autorizacao(self, request, queryset):
+        executadas = 0
+        falhas = 0
+
+        for solicitacao in queryset:
+            try:
+                resultado = reembolso_service.executar_cancelamento_autorizacao(
+                    solicitacao.id,
+                    request.user,
+                )
+                if resultado.status == 'CONCLUIDA':
+                    executadas += 1
+                else:
+                    falhas += 1
+            except Exception as e:
+                falhas += 1
+                self.message_user(
+                    request,
+                    f"Erro ao executar cancelamento da solicitacao #{solicitacao.id}: {e}",
+                    level=messages.ERROR,
+                )
+
+        self.message_user(
+            request,
+            f"{executadas} cancelamento(s) concluido(s); {falhas} nao concluido(s).",
+        )
+
+    executar_cancelamento_autorizacao.short_description = "Executar cancelamento Stripe aprovado"

@@ -7,6 +7,7 @@ from .managers import CustomUserManager
 import uuid
 import os
 import hashlib
+from datetime import datetime, timedelta
 from django.core.exceptions import ValidationError
 from core.enums import (
     TipoUsuario,
@@ -14,11 +15,16 @@ from core.enums import (
     TipoDocumentoLegal,
     StatusEvento,
     PedidoStatus,
+    PresencaStatus,
+    PresencaOrigem,
     PropostaStatus,
     PropostaTipo,
     MensagemTipo,
     PagamentoMetodo,
     PagamentoStatus,
+    SolicitacaoReembolsoMotivo,
+    SolicitacaoReembolsoStatus,
+    SolicitacaoReembolsoTipo,
 )
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
@@ -364,6 +370,7 @@ class Evento(BaseModel):
 class Pedido(BaseModel):
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='pedidos')
     bartender = models.ForeignKey(Bartender, on_delete=models.CASCADE, related_name='pedidos')
+    numero_bartender = models.PositiveIntegerField(editable=False)
     evento = models.ForeignKey(Evento, on_delete=models.CASCADE, related_name='pedidos')
     status = models.CharField(max_length=20, choices=PedidoStatus.choices, default=PedidoStatus.EM_NEGOCIACAO)
     # referência para a proposta aprovada (snapshot imutável de aceite)
@@ -372,13 +379,84 @@ class Pedido(BaseModel):
     valor_hora_aprovado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     horas_aprovadas = models.PositiveIntegerField(null=True, blank=True)
     valor_total_aprovado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    presenca_status = models.CharField(max_length=20, choices=PresencaStatus.choices, default=PresencaStatus.PENDENTE)
+    presenca_origem = models.CharField(max_length=20, choices=PresencaOrigem.choices, null=True, blank=True)
+    presenca_registrada_em = models.DateTimeField(null=True, blank=True)
+    presenca_registrada_por = models.ForeignKey(
+        'User',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='presencas_registradas',
+    )
+    presenca_observacao = models.TextField(blank=True)
 
     class Meta:
         verbose_name = 'Pedido'
         verbose_name_plural = 'Pedidos'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['bartender', 'numero_bartender'],
+                name='unique_pedido_numero_por_bartender',
+            )
+        ]
 
     def __str__(self):
-        return f'Pedido #{self.pk} - {self.get_status_display()}'
+        return f'Pedido #{self.numero_bartender} - {self.get_status_display()}'
+
+    @staticmethod
+    def _aware(dt):
+        if timezone.is_aware(dt):
+            return dt
+        return timezone.make_aware(dt)
+
+    def periodo_evento(self):
+        inicio = datetime.combine(self.evento.data, self.evento.hora_inicio)
+        fim = datetime.combine(self.evento.data, self.evento.hora_fim)
+
+        if fim <= inicio:
+            fim = fim + timedelta(days=1)
+
+        return self._aware(inicio), self._aware(fim)
+
+    @property
+    def servico_inicio_previsto(self):
+        inicio, _ = self.periodo_evento()
+        return inicio
+
+    @property
+    def servico_fim_previsto(self):
+        inicio, fim_evento = self.periodo_evento()
+        if not self.horas_aprovadas:
+            return fim_evento
+        return inicio + timedelta(hours=int(self.horas_aprovadas))
+
+    @property
+    def liberacao_automatica_em(self):
+        return self.servico_fim_previsto + timedelta(minutes=5)
+
+    def save(self, *args, **kwargs):
+        if self.numero_bartender is None and self.bartender_id:
+            from django.db import transaction
+
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None:
+                update_fields = set(update_fields)
+                update_fields.add('numero_bartender')
+                kwargs['update_fields'] = update_fields
+
+            with transaction.atomic():
+                Bartender.objects.select_for_update().get(pk=self.bartender_id)
+                ultimo_numero = (
+                    Pedido.all_objects
+                    .filter(bartender_id=self.bartender_id)
+                    .aggregate(maior=models.Max('numero_bartender'))['maior']
+                    or 0
+                )
+                self.numero_bartender = ultimo_numero + 1
+                return super().save(*args, **kwargs)
+
+        return super().save(*args, **kwargs)
 
     def create_initial_chat_messages(self, proposta):
         """Cria o conjunto inicial de mensagens do chat após o pedido ser criado."""
@@ -446,13 +524,62 @@ class Proposta(BaseModel):
     pedido = models.ForeignKey('Pedido', on_delete=models.CASCADE, related_name='propostas')
     remetente = models.ForeignKey(User, on_delete=models.CASCADE, related_name='propostas_enviadas')
     tipo = models.CharField(max_length=20, choices=PropostaTipo.choices)
+    valor_hora = models.DecimalField(max_digits=10, decimal_places=2, editable=False)
     horas = models.PositiveIntegerField()
     valor_adicional = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     desconto = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    valor_total_snapshot = models.DecimalField(max_digits=12, decimal_places=2, editable=False)
     status = models.CharField(max_length=20, choices=PropostaStatus.choices, default=PropostaStatus.PENDENTE)
 
     class Meta:
         ordering = ['-criado_em']
+
+    FINANCIAL_SNAPSHOT_FIELDS = (
+        'valor_hora',
+        'horas',
+        'valor_adicional',
+        'desconto',
+        'valor_total_snapshot',
+    )
+
+    @staticmethod
+    def _to_decimal(value):
+        if value is None:
+            return Decimal('0')
+        return Decimal(str(value))
+
+    def _calcular_valor_total_snapshot(self):
+        return (
+            Decimal(self.horas or 0) * self._to_decimal(self.valor_hora)
+            + self._to_decimal(self.valor_adicional)
+            - self._to_decimal(self.desconto)
+        ).quantize(Decimal('0.01'))
+
+    def _set_initial_financial_snapshot(self):
+        if self.valor_hora is None:
+            self.valor_hora = self.pedido.bartender.valor_hora or Decimal('0')
+
+        if self.valor_total_snapshot is None:
+            self.valor_total_snapshot = self._calcular_valor_total_snapshot()
+
+    def _validate_financial_snapshot_immutable(self):
+        if not self.pk:
+            return
+
+        original = Proposta.all_objects.only(*self.FINANCIAL_SNAPSHOT_FIELDS).get(pk=self.pk)
+        for field in self.FINANCIAL_SNAPSHOT_FIELDS:
+            if getattr(original, field) != getattr(self, field):
+                raise ValidationError(
+                    _('Os valores financeiros da proposta nÃ£o podem ser alterados apÃ³s a criaÃ§Ã£o.')
+                )
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            self._set_initial_financial_snapshot()
+        else:
+            self._validate_financial_snapshot_immutable()
+
+        super().save(*args, **kwargs)
 
     def chat_payload(self):
         return {
@@ -460,6 +587,7 @@ class Proposta(BaseModel):
             'pedido_id': self.pedido_id,
             'remetente': self.remetente_id,
             'tipo': self.tipo,
+            'valor_hora': str(self.valor_hora),
             'horas': self.horas,
             'valor_adicional': str(self.valor_adicional),
             'desconto': str(self.desconto),
@@ -495,32 +623,70 @@ class Proposta(BaseModel):
     def _is_participant(self, user):
         return user == self.pedido.cliente.user or user == self.pedido.bartender.user
 
+    def _is_recipient(self, user):
+        return self._is_participant(user) and user != self.remetente
+
+    def _is_latest_proposal(self):
+        latest = (
+            Proposta.objects
+            .filter(pedido=self.pedido)
+            .order_by('-criado_em', '-id')
+            .first()
+        )
+        return bool(latest and latest.pk == self.pk)
+
     def accept(self, user):
         from django.db import transaction
         if not self._is_participant(user):
             raise PermissionError(_('Usuário sem permissão para aceitar esta proposta.'))
+
+        if not self._is_recipient(user):
+            raise PermissionError(_('O remetente nao pode aceitar a propria proposta.'))
+
+        if self.status != PropostaStatus.PENDENTE:
+            raise ValueError(_('Somente propostas pendentes podem ser aceitas.'))
+
+        if not self._is_latest_proposal():
+            raise ValueError(_('Esta proposta nao e mais a proposta vigente do pedido.'))
 
         with transaction.atomic():
             pedido = Pedido.objects.select_for_update().get(pk=self.pedido.pk)
             if pedido.status != PedidoStatus.EM_NEGOCIACAO:
                 raise ValueError(_('Pedido não está em negociação.'))
 
-            # marca esta proposta como aceita e atualiza o pedido com snapshot dos valores aprovados
-            self.status = PropostaStatus.ACEITA
-            self.save()
-            self.sync_chat_card_message()
+            proposta = (
+                Proposta.objects
+                .select_for_update()
+                .get(pk=self.pk)
+            )
+            if proposta.status != PropostaStatus.PENDENTE:
+                raise ValueError(_('Somente propostas pendentes podem ser aceitas.'))
 
-            pedido.proposta_aprovada = self
+            latest = (
+                Proposta.objects
+                .select_for_update()
+                .filter(pedido=pedido)
+                .order_by('-criado_em', '-id')
+                .first()
+            )
+            if latest and latest.pk != proposta.pk:
+                raise ValueError(_('Esta proposta nao e mais a proposta vigente do pedido.'))
+
+            # marca esta proposta como aceita e atualiza o pedido com snapshot dos valores aprovados
+            proposta.status = PropostaStatus.ACEITA
+            proposta.save()
+            proposta.sync_chat_card_message()
+
+            pedido.proposta_aprovada = proposta
             pedido.status = PedidoStatus.ACEITO
-            pedido.valor_hora_aprovado = pedido.bartender.valor_hora
-            pedido.horas_aprovadas = self.horas
-            pedido.valor_total_aprovado = self.valor_total
+            pedido.valor_hora_aprovado = proposta.valor_hora
+            pedido.horas_aprovadas = proposta.horas
+            pedido.valor_total_aprovado = proposta.valor_total
             pedido.save()
 
             # opcional: marcar outras propostas como substituídas
-            from django.db.models import Q
             # marcar outras propostas pendentes como SUBSTITUIDA
-            Proposta.objects.filter(pedido=pedido, status=PropostaStatus.PENDENTE).exclude(pk=self.pk).update(status=PropostaStatus.SUBSTITUIDA)
+            Proposta.objects.filter(pedido=pedido, status=PropostaStatus.PENDENTE).exclude(pk=proposta.pk).update(status=PropostaStatus.SUBSTITUIDA)
             # criar mensagem de sistema no chat para notificar sobre o aceite
             try:
                 chat = Chat.objects.get(pedido=pedido)
@@ -531,15 +697,16 @@ class Proposta(BaseModel):
                 chat=chat,
                 remetente=None,
                 tipo=MensagemTipo.STATUS_UPDATE,
-                conteudo=_('Proposta aceita! O pagamento foi liberado.'),
+                conteudo=_('Proposta aceita! Aguardando pagamento do cliente.'),
                 payload={
-                    'proposta_id': self.pk,
+                    'proposta_id': proposta.pk,
                     'pedido_id': pedido.pk,
-                    'valor_total': str(self.valor_total),
+                    'valor_total': str(proposta.valor_total),
                 }
             )
 
-            return self
+            self.status = proposta.status
+            return proposta
 
     def reject(self, user):
         from django.db import transaction
@@ -595,25 +762,28 @@ class Proposta(BaseModel):
         if self.pedido.status != PedidoStatus.EM_NEGOCIACAO:
             raise ValueError(_('Pedido não está em negociação.'))
 
-        tipo = PropostaTipo.INICIAL
-        if valor_adicional and valor_adicional > 0:
-            tipo = PropostaTipo.ADICIONAL
-        elif desconto and desconto > 0:
-            tipo = PropostaTipo.DESCONTO
+        valor_adicional = self._to_decimal(valor_adicional)
+        desconto = self._to_decimal(desconto)
+        if valor_adicional > 0 and desconto > 0:
+            raise ValueError(_('Nao e permitido enviar valor adicional e desconto simultaneamente.'))
 
-        # Regras de papel: apenas o bartender pode criar contrapropostas do tipo adicional/desconto
-        if tipo in (PropostaTipo.ADICIONAL, PropostaTipo.DESCONTO):
-            bartender_user = self.pedido.bartender.user
-            if user != bartender_user:
-                raise PermissionError(_('Apenas o bartender pode criar contrapropostas de adicional/desconto.'))
+        bartender_user = self.pedido.bartender.user
+        if user != bartender_user and (valor_adicional > 0 or desconto > 0):
+            raise PermissionError(_('Cliente pode contrapropor apenas a quantidade de horas.'))
+
+        tipo = PropostaTipo.INICIAL
+        if user == bartender_user and valor_adicional > 0:
+            tipo = PropostaTipo.ADICIONAL
+        elif user == bartender_user and desconto > 0:
+            tipo = PropostaTipo.DESCONTO
 
         nova = Proposta.objects.create(
             pedido=self.pedido,
             remetente=user,
             tipo=tipo,
             horas=horas if horas is not None else self.horas,
-            valor_adicional=valor_adicional if valor_adicional is not None else self.valor_adicional,
-            desconto=desconto if desconto is not None else self.desconto,
+            valor_adicional=valor_adicional if user == bartender_user else Decimal('0.00'),
+            desconto=desconto if user == bartender_user else Decimal('0.00'),
             status=PropostaStatus.PENDENTE,
         )
 
@@ -626,6 +796,9 @@ class Proposta(BaseModel):
 
     @property
     def valor_total(self):
+        if self.valor_total_snapshot is not None:
+            return self.valor_total_snapshot
+
         """Calcula o valor total da proposta"""
         # regra de negócio: calcular com base no valor_hora do bartender
         valor_hora = self.pedido.bartender.valor_hora or Decimal('0')
@@ -706,3 +879,95 @@ class Pagamento(BaseModel):
 
     def __str__(self):
         return f'Pagamento #{self.pk} - Pedido #{self.pedido_id} - Valor: {self.valor}'
+
+
+class SolicitacaoReembolso(BaseModel):
+    STATUS_ATIVOS = [
+        SolicitacaoReembolsoStatus.ABERTA,
+        SolicitacaoReembolsoStatus.CONTESTADA,
+        SolicitacaoReembolsoStatus.APROVADA,
+        SolicitacaoReembolsoStatus.FALHOU,
+    ]
+
+    pedido = models.ForeignKey(
+        Pedido,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+    )
+    pagamento = models.ForeignKey(
+        Pagamento,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+        null=True,
+        blank=True,
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+    )
+    bartender = models.ForeignKey(
+        Bartender,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+    )
+    tipo = models.CharField(
+        max_length=40,
+        choices=SolicitacaoReembolsoTipo.choices,
+        default=SolicitacaoReembolsoTipo.CANCELAMENTO_AUTORIZACAO,
+    )
+    motivo = models.CharField(
+        max_length=40,
+        choices=SolicitacaoReembolsoMotivo.choices,
+        default=SolicitacaoReembolsoMotivo.AUSENCIA_BARTENDER,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=SolicitacaoReembolsoStatus.choices,
+        default=SolicitacaoReembolsoStatus.ABERTA,
+    )
+    valor_solicitado = models.DecimalField(max_digits=12, decimal_places=2)
+    valor_aprovado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    moeda = models.CharField(max_length=3, default='brl')
+    observacao_cliente = models.TextField(blank=True)
+    resposta_bartender = models.TextField(blank=True)
+    respondido_em = models.DateTimeField(null=True, blank=True)
+    decisao_admin = models.TextField(blank=True)
+    decidido_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name='decisoes_reembolso',
+        null=True,
+        blank=True,
+    )
+    decidido_em = models.DateTimeField(null=True, blank=True)
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_status = models.CharField(max_length=50, blank=True)
+    stripe_idempotency_key = models.CharField(max_length=255, blank=True)
+    stripe_erro = models.TextField(blank=True)
+    execucao_financeira_iniciada_em = models.DateTimeField(null=True, blank=True)
+    execucao_financeira_concluida_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Solicitacao de reembolso'
+        verbose_name_plural = 'Solicitacoes de reembolso'
+        ordering = ['-criado_em']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['pedido'],
+                condition=models.Q(status__in=[
+                    SolicitacaoReembolsoStatus.ABERTA,
+                    SolicitacaoReembolsoStatus.CONTESTADA,
+                    SolicitacaoReembolsoStatus.APROVADA,
+                    SolicitacaoReembolsoStatus.FALHOU,
+                ]),
+                name='unique_solicitacao_reembolso_ativa_por_pedido',
+            )
+        ]
+
+    @property
+    def esta_ativa(self):
+        return self.status in self.STATUS_ATIVOS
+
+    def __str__(self):
+        return f'Solicitacao de reembolso #{self.pk} - Pedido #{self.pedido_id} - {self.status}'

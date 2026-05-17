@@ -5,15 +5,18 @@ from .serializers import UserSerializer, DocumentoLegalSerializer, AceiteDocumen
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from drf_spectacular.utils import extend_schema, OpenApiExample
-from core.enums import PedidoStatus, TipoUsuario, TipoDocumentoLegal
-from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao
-from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PedidoCreateSerializer, AvaliacaoSerializer
+from core.enums import PedidoStatus, TipoUsuario, TipoDocumentoLegal, SolicitacaoReembolsoStatus
+from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao, SolicitacaoReembolso
+from .serializers import PedidoSerializer, PropostaSerializer, ChatSerializer, MensagemSerializer, CounterPropostaRequestSerializer, AcceptPropostaRequestSerializer, PresencaPedidoRequestSerializer, PedidoCreateSerializer, AvaliacaoSerializer
+from .serializers import SolicitacaoReembolsoSerializer, ResponderSolicitacaoReembolsoRequestSerializer, DecidirSolicitacaoReembolsoRequestSerializer
 from rest_framework import status
 from .permissions import PropostaParticipantPermission
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError
 from django.db.models.functions import Coalesce
+from core.services import stripe_service, reembolso_service
 
 @extend_schema(tags=["Usuários"])
 class UserViewSet(viewsets.ModelViewSet):
@@ -355,6 +358,241 @@ class PedidoViewSet(viewsets.ModelViewSet):
         return Response(PedidoSerializer(pedido, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
+    @extend_schema(
+        summary="Confirmar presenca do bartender",
+        description="Cliente dono do pedido confirma que o bartender compareceu. Se houver pagamento autorizado, tenta liberar/capturar.",
+        request=PresencaPedidoRequestSerializer,
+        responses=PedidoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='confirmar-presenca')
+    def confirmar_presenca(self, request, pk=None):
+        pedido = self.get_object()
+        serializer = PresencaPedidoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            pedido = stripe_service.confirmar_presenca_pedido(
+                pedido.id,
+                request.user,
+                observacao=serializer.validated_data.get('observacao', ''),
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(PedidoSerializer(pedido, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Registrar ausencia do bartender",
+        description="Cliente dono do pedido informa que o bartender nao compareceu. Bloqueia liberacao/captura futura.",
+        request=PresencaPedidoRequestSerializer,
+        responses=PedidoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='registrar-ausencia')
+    def registrar_ausencia(self, request, pk=None):
+        pedido = self.get_object()
+        serializer = PresencaPedidoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            pedido = stripe_service.registrar_ausencia_pedido(
+                pedido.id,
+                request.user,
+                observacao=serializer.validated_data.get('observacao', ''),
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(PedidoSerializer(pedido, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Visualizar solicitacao de reembolso atual do pedido",
+        description="Cliente dono do pedido visualiza a solicitacao mais recente criada apos registro de ausencia.",
+        responses=SolicitacaoReembolsoSerializer,
+    )
+    @action(detail=True, methods=['get'], url_path='solicitacao-reembolso')
+    def solicitacao_reembolso(self, request, pk=None):
+        pedido = self.get_object()
+
+        if not hasattr(request.user, "cliente") or pedido.cliente.user_id != request.user.id:
+            return Response(
+                {'detail': 'Apenas o cliente dono do pedido pode visualizar esta solicitacao'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        solicitacao = (
+            SolicitacaoReembolso.objects
+            .select_related(
+                'pedido',
+                'pagamento',
+                'cliente__user',
+                'bartender__user',
+                'decidido_por',
+            )
+            .filter(pedido=pedido)
+            .order_by('-criado_em')
+            .first()
+        )
+
+        if not solicitacao:
+            return Response(
+                {'detail': 'Solicitacao de reembolso nao encontrada'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(SolicitacaoReembolsoSerializer(solicitacao, context={'request': request}).data)
+
+
+@extend_schema(tags=["Solicitacoes de Reembolso"])
+class SolicitacaoReembolsoViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = SolicitacaoReembolsoSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_value_regex = "[0-9]+"
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return SolicitacaoReembolso.objects.none()
+
+        queryset = (
+            SolicitacaoReembolso.objects
+            .select_related(
+                'pedido',
+                'pagamento',
+                'cliente__user',
+                'bartender__user',
+                'decidido_por',
+            )
+            .order_by('-criado_em')
+        )
+
+        user = self.request.user
+        if user.is_staff:
+            return queryset
+
+        if getattr(user, 'tipo', None) == TipoUsuario.CLIENTE:
+            return queryset.filter(cliente__user=user)
+
+        if getattr(user, 'tipo', None) == TipoUsuario.BARTENDER:
+            return queryset.filter(bartender__user=user)
+
+        return queryset.none()
+
+    def list(self, request, *args, **kwargs):
+        if not request.user.is_staff:
+            return Response(
+                {'detail': 'Apenas administradores podem listar solicitacoes de reembolso'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Bartender responde ou contesta solicitacao de reembolso",
+        request=ResponderSolicitacaoReembolsoRequestSerializer,
+        responses=SolicitacaoReembolsoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='responder')
+    def responder(self, request, pk=None):
+        self.get_object()
+        serializer = ResponderSolicitacaoReembolsoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            solicitacao = reembolso_service.responder_solicitacao(
+                pk,
+                request.user,
+                resposta=serializer.validated_data['resposta'],
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(SolicitacaoReembolsoSerializer(solicitacao, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Admin aprova solicitacao de reembolso",
+        request=DecidirSolicitacaoReembolsoRequestSerializer,
+        responses=SolicitacaoReembolsoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='aprovar')
+    def aprovar(self, request, pk=None):
+        self.get_object()
+        serializer = DecidirSolicitacaoReembolsoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            solicitacao = reembolso_service.aprovar_solicitacao(
+                pk,
+                request.user,
+                decisao_admin=serializer.validated_data['decisao_admin'],
+                valor_aprovado=serializer.validated_data.get('valor_aprovado'),
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(SolicitacaoReembolsoSerializer(solicitacao, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Admin nega solicitacao de reembolso",
+        request=DecidirSolicitacaoReembolsoRequestSerializer,
+        responses=SolicitacaoReembolsoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='negar')
+    def negar(self, request, pk=None):
+        self.get_object()
+        serializer = DecidirSolicitacaoReembolsoRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            solicitacao = reembolso_service.negar_solicitacao(
+                pk,
+                request.user,
+                decisao_admin=serializer.validated_data['decisao_admin'],
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(SolicitacaoReembolsoSerializer(solicitacao, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Admin executa cancelamento de autorizacao aprovado",
+        description="Cancela na Stripe apenas PaymentIntent aprovado e ainda nao capturado. Nao cria refund.",
+        request=None,
+        responses=SolicitacaoReembolsoSerializer,
+    )
+    @action(detail=True, methods=['post'], url_path='executar-cancelamento')
+    def executar_cancelamento(self, request, pk=None):
+        self.get_object()
+
+        try:
+            solicitacao = reembolso_service.executar_cancelamento_autorizacao(
+                pk,
+                request.user,
+            )
+        except PermissionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        response_status = (
+            status.HTTP_400_BAD_REQUEST
+            if solicitacao.status == SolicitacaoReembolsoStatus.FALHOU
+            else status.HTTP_200_OK
+        )
+        return Response(
+            SolicitacaoReembolsoSerializer(solicitacao, context={'request': request}).data,
+            status=response_status,
+        )
+
+
 @extend_schema(tags=["Propostas"])
 class PropostaViewSet(viewsets.ModelViewSet):
     serializer_class = PropostaSerializer
@@ -371,6 +609,13 @@ class PropostaViewSet(viewsets.ModelViewSet):
         return Proposta.objects.filter(models.Q(remetente=user) | models.Q(pedido__cliente__user=user) | models.Q(pedido__bartender__user=user))
 
     def perform_create(self, serializer):
+        pedido = serializer.validated_data.get('pedido')
+        user = self.request.user
+
+        if pedido:
+            if user != pedido.cliente.user and user != pedido.bartender.user:
+                raise PermissionDenied('Usuario nao participa deste pedido.')
+
         serializer.save(remetente=self.request.user)
 
     @extend_schema(
@@ -402,7 +647,11 @@ class PropostaViewSet(viewsets.ModelViewSet):
     def accept(self, request, pk=None):
         proposta = self.get_object()
         try:
-            proposta.accept(request.user)
+            proposta = proposta.accept(request.user)
+        except PermissionError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(proposta).data)
@@ -467,7 +716,7 @@ class PropostaViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema(tags=["Chats"])
-class ChatViewSet(viewsets.ModelViewSet):
+class ChatViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ChatSerializer
     permission_classes = [IsAuthenticated]
     lookup_value_regex = "[0-9]+"
@@ -481,7 +730,26 @@ class ChatViewSet(viewsets.ModelViewSet):
             'pedido__cliente__user',
             'pedido__bartender__user',
             'pedido__evento',
-        ).prefetch_related('mensagens')
+            'pedido__pagamento',
+        ).prefetch_related(
+            'mensagens',
+            models.Prefetch(
+                'pedido__solicitacoes_reembolso',
+                queryset=SolicitacaoReembolso.objects.order_by('-criado_em'),
+                to_attr='solicitacoes_reembolso_ordenadas',
+            ),
+        ).annotate(
+            ultima_atividade_em=Coalesce(models.Max('mensagens__criado_em'), 'criado_em')
+        ).order_by('-ultima_atividade_em', '-id')
+
+        pedido_id = self.request.query_params.get('pedido')
+        if pedido_id:
+            try:
+                pedido_id = int(pedido_id)
+            except (TypeError, ValueError):
+                return Chat.objects.none()
+            queryset = queryset.filter(pedido_id=pedido_id)
+
         if user.is_staff:
             return queryset
         return queryset.filter(models.Q(pedido__cliente__user=user) | models.Q(pedido__bartender__user=user))
@@ -492,6 +760,7 @@ class MensagemViewSet(viewsets.ModelViewSet):
     serializer_class = MensagemSerializer
     permission_classes = [IsAuthenticated]
     lookup_value_regex = "[0-9]+"
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
@@ -503,6 +772,14 @@ class MensagemViewSet(viewsets.ModelViewSet):
         return Mensagem.objects.filter(models.Q(chat__pedido__cliente__user=user) | models.Q(chat__pedido__bartender__user=user))
 
     def perform_create(self, serializer):
+        chat = serializer.validated_data.get('chat')
+        user = self.request.user
+
+        if chat:
+            pedido = chat.pedido
+            if user != pedido.cliente.user and user != pedido.bartender.user:
+                raise PermissionDenied('Usuario nao participa deste chat.')
+
         serializer.save(remetente=self.request.user)
 
     @extend_schema(

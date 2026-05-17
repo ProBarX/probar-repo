@@ -10,6 +10,7 @@ const PRIMARY_YELLOW = "#F5C518"
 type Avaliacao = {
   id: number
   pedido_id: number
+  pedido_numero_bartender?: number | null
   nota: number
   comentario: string
   cliente_nome: string
@@ -111,7 +112,6 @@ export default function BartenderFeedbackPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setLoading(true)
     api
       .get<Avaliacao[] | PaginatedResponse<Avaliacao>>("/avaliacoes/")
       .then(({ data }) => {
@@ -283,7 +283,7 @@ export default function BartenderFeedbackPage() {
               {/* Evento */}
               {av.evento_nome && (
                 <p style={{ margin: 0, fontSize: "12px", color: "#888", fontStyle: "italic" }}>
-                  Pedido #{av.pedido_id} · {av.evento_nome}
+                  Pedido #{av.pedido_numero_bartender ?? "-"} · {av.evento_nome}
                 </p>
               )}
 

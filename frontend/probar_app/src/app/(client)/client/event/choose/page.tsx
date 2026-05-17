@@ -125,13 +125,13 @@ export default function ChooseEventPage() {
     setSubmitError(null)
 
     try {
-      await api.post("/pedidos/", {
+      const { data: pedido } = await api.post<{ id: number }>("/pedidos/", {
         bartender: bartenderId,
         evento: selectedId,
         horas,
       })
 
-      router.push("/client/chat")
+      router.push(`/client/chat?pedido=${pedido.id}`)
     } catch (err) {
       setSubmitError(getApiErrorMessage(err, "Nao foi possivel criar o pedido."))
     } finally {

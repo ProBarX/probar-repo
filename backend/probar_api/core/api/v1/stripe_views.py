@@ -1,5 +1,6 @@
 import stripe
 from django.conf import settings
+from django.db import transaction
 from urllib.parse import urlparse
 
 from rest_framework.decorators import api_view, permission_classes
@@ -38,6 +39,7 @@ class StripeStatusResponseSerializer(serializers.Serializer):
 class StripePagamentoResponseSerializer(serializers.Serializer):
     pagamento_id = serializers.IntegerField()
     pedido_id = serializers.IntegerField()
+    pedido_numero_bartender = serializers.IntegerField(allow_null=True)
     valor = serializers.CharField()
     status = serializers.CharField()
     mode = serializers.ChoiceField(choices=["payment", "setup"])
@@ -48,6 +50,10 @@ class StripePagamentoResponseSerializer(serializers.Serializer):
     payment_method_id = serializers.CharField(allow_null=True)
     client_secret = serializers.CharField(allow_null=True)
     stripe_status = serializers.CharField(allow_null=True)
+    presenca_status = serializers.CharField()
+    presenca_origem = serializers.CharField(allow_null=True)
+    servico_fim_previsto = serializers.DateTimeField()
+    liberacao_automatica_em = serializers.DateTimeField()
 
 
 class StripeStatusMessageSerializer(serializers.Serializer):
@@ -69,6 +75,7 @@ def _pagamento_payload(pagamento, intent):
     return {
         "pagamento_id": pagamento.id,
         "pedido_id": pagamento.pedido_id,
+        "pedido_numero_bartender": pagamento.pedido.numero_bartender,
         "valor": str(pagamento.valor),
         "status": pagamento.status,
         "mode": mode,
@@ -79,6 +86,10 @@ def _pagamento_payload(pagamento, intent):
         "payment_method_id": pagamento.stripe_payment_method_id,
         "client_secret": _stripe_attr(intent, "client_secret"),
         "stripe_status": _stripe_attr(intent, "status"),
+        "presenca_status": pagamento.pedido.presenca_status,
+        "presenca_origem": pagamento.pedido.presenca_origem,
+        "servico_fim_previsto": pagamento.pedido.servico_fim_previsto,
+        "liberacao_automatica_em": pagamento.pedido.liberacao_automatica_em,
     }
 
 
@@ -401,6 +412,64 @@ def confirmar_setup_pagamento(request, pagamento_id):
 
 @extend_schema(
     tags=[TAG_STRIPE_PAGAMENTOS],
+    summary="Sincronizar PaymentIntent autorizado",
+    description=(
+        "Consulta o PaymentIntent na Stripe apos a confirmacao no frontend e registra no backend "
+        "que o pagamento esta autorizado para captura manual. Nao captura, cancela ou reembolsa valores."
+    ),
+    request=None,
+    responses={
+        200: StripePagamentoResponseSerializer,
+        400: OpenApiResponse(StripeErroSerializer, description="PaymentIntent ainda nao esta autorizado."),
+        403: OpenApiResponse(StripeErroSerializer, description="Usuario sem permissao para sincronizar este pagamento."),
+        404: OpenApiResponse(StripeErroSerializer, description="Pagamento nao encontrado."),
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def confirmar_pagamento_autorizado(request, pagamento_id):
+    try:
+        with transaction.atomic():
+            pagamento = (
+                Pagamento.objects
+                .select_for_update()
+                .select_related("pedido__cliente", "pedido__evento")
+                .get(id=pagamento_id)
+            )
+
+            if not hasattr(request.user, "cliente"):
+                return Response(
+                    {"erro": "Apenas clientes podem confirmar pagamento"},
+                    status=403,
+                )
+
+            if pagamento.pedido.cliente.user_id != request.user.id:
+                return Response(
+                    {"erro": "Voce nao pode confirmar este pagamento"},
+                    status=403,
+                )
+
+            pagamento, intent = stripe_service.sincronizar_payment_intent_autorizado(
+                pagamento
+            )
+
+        return Response(_pagamento_payload(pagamento, intent))
+
+    except Pagamento.DoesNotExist:
+        return Response({"erro": "Pagamento nao encontrado"}, status=404)
+
+    except stripe.error.StripeError as e:
+        return Response(
+            {"erro": getattr(e, "user_message", None) or str(e)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    except ValueError as e:
+        return Response({"erro": str(e)}, status=400)
+
+
+@extend_schema(
+    tags=[TAG_STRIPE_PAGAMENTOS],
     summary="Capturar pagamento autorizado",
     description=(
         "Libera/captura um PaymentIntent autorizado. Apenas o cliente dono do pedido pode capturar. "
@@ -457,8 +526,8 @@ def capturar_pagamento(request, pagamento_id):
     tags=[TAG_STRIPE_PAGAMENTOS],
     summary="Finalizar pagamento pelo cliente",
     description=(
-        "Marca o pagamento como finalizado pelo cliente e captura o PaymentIntent quando aplicável. "
-        "Este endpoint é idempotente: se o pagamento já estiver finalizado, retorna status informativo."
+        "Captura/libera o pagamento autorizado quando aplicavel. "
+        "Este endpoint e idempotente: se o pagamento ja estiver liberado, retorna status informativo."
     ),
     request=None,
     responses={
@@ -469,14 +538,14 @@ def capturar_pagamento(request, pagamento_id):
     },
     examples=[
         OpenApiExample(
-            "Pagamento finalizado",
-            value={"status": "Pagamento finalizado pelo cliente"},
+            "Pagamento liberado",
+            value={"status": "Pagamento liberado"},
             response_only=True,
             status_codes=["200"],
         ),
         OpenApiExample(
-            "Pagamento já finalizado",
-            value={"status": "Pagamento já finalizado"},
+            "Pagamento ja liberado",
+            value={"status": "Pagamento ja liberado"},
             response_only=True,
             status_codes=["200"],
         ),
@@ -502,33 +571,27 @@ def finalizar_pagamento(request, pagamento_id):
                 status=403,
             )
 
-        if pagamento.finalizado_pelo_cliente:
-            if pagamento.stripe_payment_intent_id and pagamento.status != PagamentoStatus.PAGO:
-                stripe_service.capturar_pagamento_seguro(pagamento)
-                pagamento.refresh_from_db()
-                if pagamento.status != PagamentoStatus.PAGO:
-                    return Response(
-                        {"erro": "Pagamento nao foi capturado"},
-                        status=400,
-                    )
-            return Response({"status": "Pagamento já finalizado"})
+        stripe_service.confirmar_presenca_pedido(
+            pagamento.pedido_id,
+            request.user,
+            observacao="Confirmado pelo fluxo de finalizacao do pagamento.",
+        )
+        pagamento.refresh_from_db()
 
-        if pagamento.stripe_payment_intent_id:
-            pagamento.finalizado_pelo_cliente = True
-            stripe_service.capturar_pagamento_seguro(pagamento)
-            pagamento.refresh_from_db()
-
-            if pagamento.status != PagamentoStatus.PAGO:
-                return Response(
-                    {"erro": "Pagamento nao foi capturado"},
-                    status=400,
-                )
+        if pagamento.stripe_payment_intent_id and pagamento.status != PagamentoStatus.PAGO:
+            return Response(
+                {"erro": "Pagamento nao foi capturado"},
+                status=400,
+            )
 
         if not pagamento.finalizado_pelo_cliente:
             pagamento.finalizado_pelo_cliente = True
             pagamento.save(update_fields=["finalizado_pelo_cliente"])
 
-        return Response({"status": "Pagamento finalizado pelo cliente"})
+        if pagamento.status == PagamentoStatus.PAGO:
+            return Response({"status": "Pagamento liberado"})
+
+        return Response({"status": "Presenca confirmada"})
 
     except Pagamento.DoesNotExist:
         return Response({"erro": "Pagamento não encontrado"}, status=404)

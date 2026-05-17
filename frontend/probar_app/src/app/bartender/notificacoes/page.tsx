@@ -26,6 +26,7 @@ type PropostaApi = {
 
 type PedidoApi = {
   id: number
+  numero_bartender?: number | null
   cliente_nome: string
   evento_nome: string
   status: PedidoStatus | string
@@ -105,6 +106,10 @@ const notifConfigs: Record<NotifTipo, NotifConfig> = {
   },
 }
 
+function getPedidoDisplayNumber(pedido: PedidoApi) {
+  return pedido.numero_bartender ?? "-"
+}
+
 function buildNotifications(pedidos: PedidoApi[], currentUserId: number): Notification[] {
   const notifs: Notification[] = []
 
@@ -112,6 +117,7 @@ function buildNotifications(pedidos: PedidoApi[], currentUserId: number): Notifi
     const status = pedido.status as PedidoStatus
     const clientName = pedido.cliente_nome?.trim() || "Cliente"
     const eventoNome = pedido.evento_nome || "evento"
+    const pedidoNumero = getPedidoDisplayNumber(pedido)
 
     const incomingProposta = pedido.propostas.find(
       (p) => p.status === "PENDENTE" && p.remetente !== currentUserId
@@ -123,7 +129,7 @@ function buildNotifications(pedidos: PedidoApi[], currentUserId: number): Notifi
           id: `proposta-${incomingProposta.id}`,
           tipo: "proposta_cliente",
           titulo: "Nova proposta recebida",
-          descricao: `${clientName} enviou uma contraproposta para o pedido #${pedido.id}.`,
+          descricao: `${clientName} enviou uma contraproposta para o pedido #${pedidoNumero}.`,
           tempo: incomingProposta.criado_em,
           pedidoId: pedido.id,
           lida: false,
@@ -145,8 +151,8 @@ function buildNotifications(pedidos: PedidoApi[], currentUserId: number): Notifi
       notifs.push({
         id: `aceito-${pedido.id}`,
         tipo: "aceito",
-        titulo: "Pedido aceito",
-        descricao: `O pedido #${pedido.id} de ${clientName} foi confirmado.`,
+        titulo: "Proposta aceita",
+        descricao: `O pedido #${pedidoNumero} de ${clientName} aguarda pagamento.`,
         tempo: pedido.criado_em,
         pedidoId: pedido.id,
         lida: true,
@@ -156,8 +162,8 @@ function buildNotifications(pedidos: PedidoApi[], currentUserId: number): Notifi
       notifs.push({
         id: `pago-${pedido.id}`,
         tipo: "pago",
-        titulo: "Pagamento recebido",
-        descricao: `${clientName} realizou o pagamento do pedido #${pedido.id}.`,
+        titulo: "Pagamento liberado",
+        descricao: `O pagamento do pedido #${pedidoNumero} de ${clientName} foi capturado e liberado.`,
         tempo: pedido.criado_em,
         pedidoId: pedido.id,
         lida: true,
@@ -179,7 +185,7 @@ function buildNotifications(pedidos: PedidoApi[], currentUserId: number): Notifi
         id: `cancelado-${pedido.id}`,
         tipo: "cancelado",
         titulo: "Pedido cancelado",
-        descricao: `O pedido #${pedido.id} de ${clientName} foi cancelado.`,
+        descricao: `O pedido #${pedidoNumero} de ${clientName} foi cancelado.`,
         tempo: pedido.criado_em,
         pedidoId: pedido.id,
         lida: true,
@@ -190,7 +196,7 @@ function buildNotifications(pedidos: PedidoApi[], currentUserId: number): Notifi
         id: `recusado-${pedido.id}`,
         tipo: "recusado",
         titulo: "Pedido recusado",
-        descricao: `O pedido #${pedido.id} de ${clientName} foi recusado.`,
+        descricao: `O pedido #${pedidoNumero} de ${clientName} foi recusado.`,
         tempo: pedido.criado_em,
         pedidoId: pedido.id,
         lida: true,
@@ -250,7 +256,6 @@ export default function BartenderNotificacoesPage() {
   }, [])
 
   useEffect(() => {
-    setLoading(true)
     api
       .get<PedidoApi[] | PaginatedResponse<PedidoApi>>("/pedidos/")
       .then(({ data }) => {
