@@ -843,6 +843,7 @@ class Avaliacao(BaseModel):
     pedido = models.OneToOneField(Pedido, on_delete=models.CASCADE, related_name='avaliacao')
     nota = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comentario = models.TextField(blank=True)
+    tags = models.JSONField(default=list, blank=True)
 
     class Meta:
         verbose_name = 'Avaliação'

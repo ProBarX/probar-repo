@@ -505,6 +505,7 @@ class PedidoSerializer(serializers.ModelSerializer):
     servico_inicio_previsto = serializers.SerializerMethodField()
     servico_fim_previsto = serializers.SerializerMethodField()
     liberacao_automatica_em = serializers.SerializerMethodField()
+    tem_avaliacao = serializers.SerializerMethodField()
 
     class Meta:
         model = Pedido
@@ -520,7 +521,7 @@ class PedidoSerializer(serializers.ModelSerializer):
             'pagamento_valor', 'pagamento_finalizado_pelo_cliente',
             'presenca_status', 'presenca_origem', 'presenca_registrada_em',
             'presenca_observacao', 'servico_inicio_previsto',
-            'servico_fim_previsto', 'liberacao_automatica_em',
+            'servico_fim_previsto', 'liberacao_automatica_em', 'tem_avaliacao',
         ]
 
     def _get_pagamento(self, obj):
@@ -560,6 +561,10 @@ class PedidoSerializer(serializers.ModelSerializer):
     @extend_schema_field(OpenApiTypes.DATETIME)
     def get_liberacao_automatica_em(self, obj):
         return obj.liberacao_automatica_em
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_tem_avaliacao(self, obj):
+        return hasattr(obj, 'avaliacao')
 
 
 class PedidoCreateSerializer(serializers.Serializer):
@@ -653,10 +658,17 @@ class ChatSerializer(serializers.ModelSerializer):
 class AvaliacaoSerializer(serializers.ModelSerializer):
     cliente_nome = serializers.CharField(source='pedido.cliente.user.name', read_only=True)
     evento_nome = serializers.CharField(source='pedido.evento.nome', read_only=True)
+    bartender_nome = serializers.CharField(source='pedido.bartender.user.name', read_only=True)
     pedido_id = serializers.IntegerField(source='pedido.id', read_only=True)
     pedido_numero_bartender = serializers.IntegerField(source='pedido.numero_bartender', read_only=True, allow_null=True)
+    pedido = serializers.PrimaryKeyRelatedField(queryset=Pedido.objects.all(), write_only=True)
+    tags = serializers.ListField(child=serializers.CharField(max_length=50), required=False, default=list)
 
     class Meta:
         model = Avaliacao
-        fields = ['id', 'pedido_id', 'pedido_numero_bartender', 'nota', 'comentario', 'cliente_nome', 'evento_nome', 'criado_em']
+        fields = [
+            'id', 'pedido', 'pedido_id', 'pedido_numero_bartender',
+            'nota', 'comentario', 'tags',
+            'cliente_nome', 'evento_nome', 'bartender_nome', 'criado_em',
+        ]
         read_only_fields = ['id', 'criado_em']
