@@ -22,6 +22,9 @@ from core.enums import (
     MensagemTipo,
     PagamentoMetodo,
     PagamentoStatus,
+    SolicitacaoReembolsoMotivo,
+    SolicitacaoReembolsoStatus,
+    SolicitacaoReembolsoTipo,
 )
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
@@ -872,3 +875,95 @@ class Pagamento(BaseModel):
 
     def __str__(self):
         return f'Pagamento #{self.pk} - Pedido #{self.pedido_id} - Valor: {self.valor}'
+
+
+class SolicitacaoReembolso(BaseModel):
+    STATUS_ATIVOS = [
+        SolicitacaoReembolsoStatus.ABERTA,
+        SolicitacaoReembolsoStatus.CONTESTADA,
+        SolicitacaoReembolsoStatus.APROVADA,
+        SolicitacaoReembolsoStatus.FALHOU,
+    ]
+
+    pedido = models.ForeignKey(
+        Pedido,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+    )
+    pagamento = models.ForeignKey(
+        Pagamento,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+        null=True,
+        blank=True,
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+    )
+    bartender = models.ForeignKey(
+        Bartender,
+        on_delete=models.PROTECT,
+        related_name='solicitacoes_reembolso',
+    )
+    tipo = models.CharField(
+        max_length=40,
+        choices=SolicitacaoReembolsoTipo.choices,
+        default=SolicitacaoReembolsoTipo.CANCELAMENTO_AUTORIZACAO,
+    )
+    motivo = models.CharField(
+        max_length=40,
+        choices=SolicitacaoReembolsoMotivo.choices,
+        default=SolicitacaoReembolsoMotivo.AUSENCIA_BARTENDER,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=SolicitacaoReembolsoStatus.choices,
+        default=SolicitacaoReembolsoStatus.ABERTA,
+    )
+    valor_solicitado = models.DecimalField(max_digits=12, decimal_places=2)
+    valor_aprovado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    moeda = models.CharField(max_length=3, default='brl')
+    observacao_cliente = models.TextField(blank=True)
+    resposta_bartender = models.TextField(blank=True)
+    respondido_em = models.DateTimeField(null=True, blank=True)
+    decisao_admin = models.TextField(blank=True)
+    decidido_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name='decisoes_reembolso',
+        null=True,
+        blank=True,
+    )
+    decidido_em = models.DateTimeField(null=True, blank=True)
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_status = models.CharField(max_length=50, blank=True)
+    stripe_idempotency_key = models.CharField(max_length=255, blank=True)
+    stripe_erro = models.TextField(blank=True)
+    execucao_financeira_iniciada_em = models.DateTimeField(null=True, blank=True)
+    execucao_financeira_concluida_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Solicitacao de reembolso'
+        verbose_name_plural = 'Solicitacoes de reembolso'
+        ordering = ['-criado_em']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['pedido'],
+                condition=models.Q(status__in=[
+                    SolicitacaoReembolsoStatus.ABERTA,
+                    SolicitacaoReembolsoStatus.CONTESTADA,
+                    SolicitacaoReembolsoStatus.APROVADA,
+                    SolicitacaoReembolsoStatus.FALHOU,
+                ]),
+                name='unique_solicitacao_reembolso_ativa_por_pedido',
+            )
+        ]
+
+    @property
+    def esta_ativa(self):
+        return self.status in self.STATUS_ATIVOS
+
+    def __str__(self):
+        return f'Solicitacao de reembolso #{self.pk} - Pedido #{self.pedido_id} - {self.status}'

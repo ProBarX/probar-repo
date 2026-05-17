@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from core.models import User, DocumentoLegal, AceiteDocumentoLegal, Cliente, Evento, Bartender, Drink
-from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao
+from core.models import Pedido, Proposta, Chat, Mensagem, Avaliacao, SolicitacaoReembolso
 from core.enums import PropostaStatus
 from django.utils.translation import gettext_lazy as _
 from decimal import Decimal
@@ -430,6 +430,52 @@ class AcceptPropostaRequestSerializer(serializers.Serializer):
 
 class PresencaPedidoRequestSerializer(serializers.Serializer):
     observacao = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class SolicitacaoReembolsoSerializer(serializers.ModelSerializer):
+    cliente_nome = serializers.CharField(source='cliente.user.name', read_only=True)
+    bartender_nome = serializers.CharField(source='bartender.user.name', read_only=True)
+    pedido_numero_bartender = serializers.IntegerField(source='pedido.numero_bartender', read_only=True, allow_null=True)
+    pagamento_status = serializers.SerializerMethodField()
+    decidido_por_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SolicitacaoReembolso
+        fields = [
+            'id', 'pedido', 'pedido_numero_bartender', 'pagamento',
+            'pagamento_status', 'cliente', 'cliente_nome', 'bartender',
+            'bartender_nome', 'tipo', 'motivo', 'status',
+            'valor_solicitado', 'valor_aprovado', 'moeda',
+            'observacao_cliente', 'resposta_bartender', 'respondido_em',
+            'decisao_admin', 'decidido_por', 'decidido_por_email',
+            'decidido_em', 'stripe_payment_intent_id', 'stripe_status',
+            'stripe_idempotency_key', 'stripe_erro',
+            'execucao_financeira_iniciada_em',
+            'execucao_financeira_concluida_em',
+            'criado_em', 'atualizado_em',
+        ]
+        read_only_fields = fields
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_pagamento_status(self, obj):
+        return obj.pagamento.status if obj.pagamento else None
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_decidido_por_email(self, obj):
+        return obj.decidido_por.email if obj.decidido_por else None
+
+
+class ResponderSolicitacaoReembolsoRequestSerializer(serializers.Serializer):
+    resposta = serializers.CharField(required=True, allow_blank=False, max_length=3000)
+
+
+class DecidirSolicitacaoReembolsoRequestSerializer(serializers.Serializer):
+    decisao_admin = serializers.CharField(required=True, allow_blank=False, max_length=3000)
+    valor_aprovado = serializers.DecimalField(
+        required=False,
+        max_digits=12,
+        decimal_places=2,
+    )
 
 
 class PedidoSerializer(serializers.ModelSerializer):

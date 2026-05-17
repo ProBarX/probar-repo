@@ -466,6 +466,21 @@ def test_pedido_antigo_sem_horas_aprovadas_usa_fim_do_evento():
 
 
 @pytest.mark.django_db
+def test_fim_servico_contratado_funciona_em_evento_que_passa_da_meia_noite():
+    event_date = datetime.date.today()
+    pedido, _ = _create_pedido(
+        event_date=event_date,
+        hora_inicio=datetime.time(22, 0),
+        hora_fim=datetime.time(2, 0),
+        horas_aprovadas=3,
+    )
+
+    assert pedido.servico_fim_previsto.date() == event_date + datetime.timedelta(days=1)
+    assert pedido.servico_fim_previsto.time() == datetime.time(1, 0)
+    assert pedido.liberacao_automatica_em.time() == datetime.time(1, 5)
+
+
+@pytest.mark.django_db
 def test_cliente_confirma_presenca_e_captura_pagamento(monkeypatch):
     pedido, cliente_user = _create_pedido(
         event_date=datetime.date.today() - datetime.timedelta(days=1)
@@ -561,6 +576,58 @@ def test_registrar_ausencia_bloqueia_captura(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_endpoint_finalizar_respeita_ausencia_registrada():
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_finalizar_ausente",
+    )
+    pedido.presenca_status = PresencaStatus.AUSENTE
+    pedido.presenca_origem = PresencaOrigem.CLIENTE
+    pedido.save(update_fields=["presenca_status", "presenca_origem"])
+
+    client = APIClient()
+    client.force_authenticate(user=cliente_user)
+
+    response = client.post(f"/api/v1/stripe/finalizar/{pagamento.id}/")
+
+    pagamento.refresh_from_db()
+
+    assert response.status_code == 400
+    assert pagamento.status == PagamentoStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_endpoint_capturar_respeita_ausencia_registrada():
+    pedido, cliente_user = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_capturar_ausente",
+    )
+    pedido.presenca_status = PresencaStatus.AUSENTE
+    pedido.presenca_origem = PresencaOrigem.CLIENTE
+    pedido.save(update_fields=["presenca_status", "presenca_origem"])
+
+    client = APIClient()
+    client.force_authenticate(user=cliente_user)
+
+    response = client.post(f"/api/v1/stripe/capturar/{pagamento.id}/")
+
+    pagamento.refresh_from_db()
+
+    assert response.status_code == 400
+    assert pagamento.status == PagamentoStatus.PENDENTE
+
+
+@pytest.mark.django_db
 def test_processar_pagamentos_pendentes_libera_automaticamente_apos_5_minutos(monkeypatch):
     pedido, _ = _create_pedido(
         event_date=datetime.date.today() - datetime.timedelta(days=1),
@@ -596,3 +663,119 @@ def test_processar_pagamentos_pendentes_libera_automaticamente_apos_5_minutos(mo
     assert pedido.presenca_origem == PresencaOrigem.AUTOMATICA
     assert pagamento.status == PagamentoStatus.PAGO
     assert captured_ids == ["pi_auto"]
+
+
+@pytest.mark.django_db
+def test_processar_pagamentos_agendados_nao_marca_pago_antes_da_liberacao(monkeypatch, settings):
+    settings.STRIPE_MANUAL_CAPTURE_WINDOW_DAYS = 5
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() + datetime.timedelta(days=1),
+        hora_inicio=datetime.time(14, 0),
+        hora_fim=datetime.time(18, 0),
+        horas_aprovadas=2,
+    )
+    pedido.cliente.stripe_customer_id = "cus_scheduled"
+    pedido.cliente.save(update_fields=["stripe_customer_id"])
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_setup_intent_id="seti_scheduled",
+    )
+
+    def fake_setup_retrieve(_intent_id):
+        return DummySetupIntent(
+            intent_id="seti_scheduled",
+            status="succeeded",
+            payment_method="pm_scheduled",
+        )
+
+    def fake_payment_create(**_kwargs):
+        return DummyIntent(intent_id="pi_scheduled", status="succeeded")
+
+    monkeypatch.setattr(stripe_service.stripe.SetupIntent, "retrieve", fake_setup_retrieve)
+    monkeypatch.setattr(stripe_service.stripe.PaymentIntent, "create", fake_payment_create)
+
+    stats = stripe_service.processar_pagamentos_pendentes()
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert stats["authorized"] == 0
+    assert stats["captured"] == 0
+    assert stats["errors"] == 0
+    assert pagamento.status == PagamentoStatus.PENDENTE
+    assert pedido.status == PedidoStatus.ACEITO
+    assert pedido.presenca_status == PresencaStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_webhook_succeeded_respeita_ausencia_registrada():
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() - datetime.timedelta(days=1)
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_webhook_ausente",
+    )
+    pedido.presenca_status = PresencaStatus.AUSENTE
+    pedido.presenca_origem = PresencaOrigem.CLIENTE
+    pedido.save(update_fields=["presenca_status", "presenca_origem"])
+
+    stripe_service.processar_webhook(
+        {
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_webhook_ausente",
+                    "status": "succeeded",
+                    "payment_method_types": ["card"],
+                }
+            },
+        }
+    )
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert pedido.status == PedidoStatus.ACEITO
+    assert pedido.presenca_status == PresencaStatus.AUSENTE
+    assert pagamento.status == PagamentoStatus.PENDENTE
+
+
+@pytest.mark.django_db
+def test_webhook_succeeded_antes_da_liberacao_nao_marca_pago():
+    pedido, _ = _create_pedido(
+        event_date=datetime.date.today() + datetime.timedelta(days=1),
+        hora_inicio=datetime.time(14, 0),
+        hora_fim=datetime.time(18, 0),
+        horas_aprovadas=2,
+    )
+    pagamento = Pagamento.objects.create(
+        pedido=pedido,
+        valor=pedido.valor_total_aprovado,
+        metodo_pagamento=PagamentoMetodo.STRIPE,
+        stripe_payment_intent_id="pi_webhook_early",
+    )
+
+    stripe_service.processar_webhook(
+        {
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_webhook_early",
+                    "status": "succeeded",
+                    "payment_method_types": ["card"],
+                }
+            },
+        }
+    )
+
+    pedido.refresh_from_db()
+    pagamento.refresh_from_db()
+
+    assert pedido.status == PedidoStatus.ACEITO
+    assert pedido.presenca_status == PresencaStatus.PENDENTE
+    assert pagamento.status == PagamentoStatus.PENDENTE

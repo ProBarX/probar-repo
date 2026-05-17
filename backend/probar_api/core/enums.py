@@ -74,3 +74,22 @@ class PagamentoStatus(models.TextChoices):
     PENDENTE = 'PENDENTE', 'Pendente'
     PAGO = 'PAGO', 'Pago'
     CANCELADO = 'CANCELADO', 'Cancelado'
+
+
+class SolicitacaoReembolsoTipo(models.TextChoices):
+    CANCELAMENTO_AUTORIZACAO = 'CANCELAMENTO_AUTORIZACAO', 'Cancelamento de autorizacao'
+    REEMBOLSO_CAPTURADO = 'REEMBOLSO_CAPTURADO', 'Reembolso de pagamento capturado'
+    SEM_COBRANCA = 'SEM_COBRANCA', 'Sem cobranca'
+
+
+class SolicitacaoReembolsoMotivo(models.TextChoices):
+    AUSENCIA_BARTENDER = 'AUSENCIA_BARTENDER', 'Ausencia do bartender'
+
+
+class SolicitacaoReembolsoStatus(models.TextChoices):
+    ABERTA = 'ABERTA', 'Aberta'
+    CONTESTADA = 'CONTESTADA', 'Contestada'
+    APROVADA = 'APROVADA', 'Aprovada'
+    NEGADA = 'NEGADA', 'Negada'
+    CONCLUIDA = 'CONCLUIDA', 'Concluida'
+    FALHOU = 'FALHOU', 'Falhou'

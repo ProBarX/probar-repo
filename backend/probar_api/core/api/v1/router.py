@@ -9,6 +9,7 @@ from .viewsets import (
 	DrinkViewSet,
 	PedidoViewSet,
 	PropostaViewSet,
+	SolicitacaoReembolsoViewSet,
 	ChatViewSet,
 	MensagemViewSet,
 	AvaliacaoViewSet,
@@ -37,6 +38,7 @@ router.register("documentos-legais", DocumentoLegalViewSet, basename="documentos
 router.register("aceites-documentos-legais", AceiteDocumentoLegalViewSet, basename="aceites-documentos-legais")
 router.register("pedidos", PedidoViewSet, basename="pedidos")
 router.register("propostas", PropostaViewSet, basename="propostas")
+router.register("solicitacoes-reembolso", SolicitacaoReembolsoViewSet, basename="solicitacoes-reembolso")
 router.register("chats", ChatViewSet, basename="chats")
 router.register("mensagens", MensagemViewSet, basename="mensagens")
 router.register("avaliacoes", AvaliacaoViewSet, basename="avaliacoes")

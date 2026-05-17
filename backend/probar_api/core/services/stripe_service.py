@@ -12,6 +12,7 @@ from core.enums import (
     PresencaStatus,
     PresencaOrigem,
 )
+from core.services import reembolso_service
 from django.db import transaction
 
 
@@ -556,6 +557,9 @@ def _captura_liberada_por_presenca(pedido, *, persistir_automatica=False, agora=
     if pedido.presenca_status == PresencaStatus.AUSENTE:
         raise ValueError("Pagamento bloqueado porque o cliente registrou ausencia do bartender")
 
+    if reembolso_service.existe_solicitacao_ativa_para_pedido(pedido.id):
+        raise ValueError("Pagamento bloqueado porque existe solicitacao de reembolso ativa")
+
     if pedido.presenca_status == PresencaStatus.PRESENTE:
         return True
 
@@ -657,8 +661,6 @@ def registrar_ausencia_pedido(pedido_id, user, *, observacao=""):
             .filter(pedido=pedido)
             .first()
         )
-        if pagamento and pagamento.status == PagamentoStatus.PAGO:
-            raise ValueError("Pagamento ja foi liberado; o caso deve seguir para reembolso")
 
         if pedido.presenca_status == PresencaStatus.PENDENTE:
             _registrar_presenca(
@@ -668,6 +670,12 @@ def registrar_ausencia_pedido(pedido_id, user, *, observacao=""):
                 user=user,
                 observacao=observacao,
             )
+
+        reembolso_service.criar_solicitacao_ausencia_locked(
+            pedido,
+            pagamento,
+            observacao_cliente=observacao,
+        )
 
     return (
         Pedido.objects
@@ -687,6 +695,9 @@ def capturar_pagamento(pagamento):
 
     if pagamento.status != PagamentoStatus.PENDENTE:
         raise ValueError("Pagamento não está pendente")
+
+    if not _captura_liberada_por_presenca(pagamento.pedido, persistir_automatica=True):
+        raise ValueError("Pagamento ainda nao pode ser liberado")
 
     stripe.PaymentIntent.capture(pagamento.stripe_payment_intent_id)
 
@@ -717,34 +728,7 @@ def marcar_pagamento_cancelado(pagamento):
 
 
 def _capturar_pagamento_seguro_legacy(pagamento):
-    if not pode_capturar(pagamento):
-        raise ValueError("Pagamento ainda não pode ser liberado")
-
-    if not pagamento.stripe_payment_intent_id:
-        raise ValueError("Pagamento sem PaymentIntent")
-
-    intent = stripe.PaymentIntent.retrieve(
-        pagamento.stripe_payment_intent_id
-    )
-
-    metodo_stripe = _extrair_metodo_pagamento_stripe(intent)
-    if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
-        pagamento.stripe_payment_method_type = metodo_stripe
-        pagamento.save(update_fields=["stripe_payment_method_type"])
-
-    if intent.status == "requires_capture":
-        return capturar_pagamento(pagamento)
-
-    if intent.status == "succeeded":
-        marcar_pagamento_pago(pagamento)
-        marcar_pedido_pago(pagamento)
-        return pagamento
-
-    if intent.status == "canceled":
-        marcar_pagamento_cancelado(pagamento)
-        return pagamento
-
-    raise ValueError("Pagamento ainda não confirmado")
+    return capturar_pagamento_seguro(pagamento)
 
 
 # =========================
@@ -854,9 +838,13 @@ def processar_pagamentos_agendados(logger=None):
             if intent.status == "requires_capture":
                 authorized += 1
             elif intent.status == "succeeded":
-                if pode_capturar(pagamento):
-                    marcar_pagamento_pago(pagamento)
-                    marcar_pedido_pago(pagamento)
+                try:
+                    pagamento = capturar_pagamento_seguro(pagamento)
+                except ValueError:
+                    skipped += 1
+                    continue
+
+                if pagamento.status == PagamentoStatus.PAGO:
                     authorized += 1
                 else:
                     skipped += 1
@@ -950,28 +938,44 @@ def processar_webhook(event):
     data = event["data"]["object"]
 
     if tipo == "payment_intent.succeeded":
-        pagamento = Pagamento.objects.filter(
+        pagamento_ref = Pagamento.objects.filter(
             stripe_payment_intent_id=data["id"]
-        ).select_related("pedido").first()
+        ).values("id", "pedido_id").first()
 
-        if not pagamento or pagamento.status == PagamentoStatus.PAGO:
+        if not pagamento_ref:
             return
 
-        if pagamento.pedido.presenca_status == PresencaStatus.AUSENTE:
-            return
+        from core.models import Pedido
 
-        update_fields = ["status"]
-        metodo_stripe = _extrair_metodo_pagamento_stripe(data)
-        if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
-            pagamento.stripe_payment_method_type = metodo_stripe
-            update_fields.append("stripe_payment_method_type")
+        with transaction.atomic():
+            pedido = Pedido.objects.select_for_update().get(pk=pagamento_ref["pedido_id"])
+            pagamento = (
+                Pagamento.objects
+                .select_for_update()
+                .select_related("pedido")
+                .get(pk=pagamento_ref["id"])
+            )
 
-        pagamento.status = PagamentoStatus.PAGO
-        pagamento.save(update_fields=update_fields)
+            if pagamento.status == PagamentoStatus.PAGO:
+                return
 
-        pedido = pagamento.pedido
-        pedido.status = PedidoStatus.PAGO
-        pedido.save(update_fields=["status"])
+            try:
+                if not _captura_liberada_por_presenca(pedido, persistir_automatica=True):
+                    return
+            except ValueError:
+                return
+
+            update_fields = ["status"]
+            metodo_stripe = _extrair_metodo_pagamento_stripe(data)
+            if metodo_stripe and pagamento.stripe_payment_method_type != metodo_stripe:
+                pagamento.stripe_payment_method_type = metodo_stripe
+                update_fields.append("stripe_payment_method_type")
+
+            pagamento.status = PagamentoStatus.PAGO
+            pagamento.save(update_fields=update_fields)
+
+            pedido.status = PedidoStatus.PAGO
+            pedido.save(update_fields=["status"])
 
     elif tipo in ["payment_intent.payment_failed", "payment_intent.canceled"]:
         Pagamento.objects.filter(
