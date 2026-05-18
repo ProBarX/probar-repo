@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react"
 import type { CSSProperties, ReactNode } from "react"
-import { CalendarDays, Mail, Star, User } from "lucide-react"
+import { CalendarDays, Mail, Camera, User } from "lucide-react"
 import { api } from "@/services/api"
 import type { ApiError, EventStatus } from "@/types/user"
 import { resolveMediaUrl } from "@/lib/media-url"
@@ -171,7 +171,7 @@ export function ProfileView({ profile, onUpdate }: Props) {
             onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = "0")}
           >
-            <Star size={20} color="#fff" />
+            <Camera size={20} color="#fff" />
           </div>
         </div>
         <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFotoChange} />

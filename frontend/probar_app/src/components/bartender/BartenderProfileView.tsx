@@ -13,6 +13,7 @@ import {
   Map,
   MapPin,
   Star,
+  Camera,
   User,
   Wine,
 } from "lucide-react"
@@ -262,7 +263,7 @@ export function BartenderProfileView({ profile, onUpdate }: Props) {
             onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = "0")}
           >
-            <Star size={20} color="#fff" />
+            <Camera size={20} color="#fff" />
           </div>
         </div>
         <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFotoChange} />
