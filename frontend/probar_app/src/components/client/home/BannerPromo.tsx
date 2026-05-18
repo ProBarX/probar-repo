@@ -1,8 +1,9 @@
 import Image from "next/image"
+import styles from "./BannerPromo.module.css"
 
 export function BannerPromo() {
   return (
-    <div className="banner-promo">
+    <div className={styles.bannerPromo}>
       <Image
         src="/promo-banner1824x254.png"
         alt="Promoção ProBar"
@@ -16,21 +17,6 @@ export function BannerPromo() {
           height: "auto",
         }}
       />
-      <style jsx>{`
-        .banner-promo {
-          background-color: #1a1a1a;
-          border-radius: 12px;
-          margin-bottom: 24px;
-          overflow: hidden;
-          width: 100%;
-        }
-
-        @media (max-width: 640px) {
-          .banner-promo {
-            display: none;
-          }
-        }
-      `}</style>
     </div>
   )
 }

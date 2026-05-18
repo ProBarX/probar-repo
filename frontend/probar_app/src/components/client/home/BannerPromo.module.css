@@ -1,0 +1,13 @@
+.bannerPromo {
+  background-color: #1a1a1a;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .bannerPromo {
+    display: none;
+  }
+}
