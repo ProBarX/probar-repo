@@ -102,7 +102,7 @@ export default function HomePage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
         <div>
           <p style={{ color: "#888", margin: 0, fontSize: "14px" }}>Localização</p>
-          <p style={{ margin: 0, fontWeight: "600" }}>Patos, Paraíba ↓</p>
+          <p style={{ margin: 0, fontWeight: "600" }}>Patos, Paraíba</p>
           <h1 style={{ margin: "4px 0 0" }}>Encontre seu Bartender</h1>
         </div>
         <div style={{ position: "relative", width: "280px" }}>

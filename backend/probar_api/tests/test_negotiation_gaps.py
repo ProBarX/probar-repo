@@ -93,6 +93,38 @@ def test_pedido_criado_com_mensagens_iniciais_do_chat():
 
 
 @pytest.mark.django_db
+def test_chat_api_ordena_mensagens_por_data_e_id_quando_timestamp_empata():
+    pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
+    chat = Chat.objects.get(pedido=pedido)
+
+    mesma_data = timezone.now() + datetime.timedelta(minutes=5)
+    primeira = Mensagem.objects.create(
+        chat=chat,
+        remetente=pedido.cliente.user,
+        tipo=MensagemTipo.TEXTO,
+        conteudo='Mensagem com mesmo horario 1',
+    )
+    segunda = Mensagem.objects.create(
+        chat=chat,
+        remetente=pedido.bartender.user,
+        tipo=MensagemTipo.TEXTO,
+        conteudo='Mensagem com mesmo horario 2',
+    )
+    Mensagem.objects.filter(pk__in=[primeira.pk, segunda.pk]).update(criado_em=mesma_data)
+
+    response = api_cliente.get(f'/api/v1/chats/{chat.id}/')
+
+    assert response.status_code == 200, response.data
+    assert Mensagem._meta.ordering == ['criado_em', 'id']
+    ids_com_mesma_data = [
+        mensagem['id']
+        for mensagem in response.data['mensagens']
+        if mensagem['id'] in {primeira.id, segunda.id}
+    ]
+    assert ids_com_mesma_data == [primeira.id, segunda.id]
+
+
+@pytest.mark.django_db
 def test_chat_api_nao_permite_criacao_manual():
     pedido, _, api_cliente, _ = _criar_pedido_com_proposta_inicial()
 

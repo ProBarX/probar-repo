@@ -1,213 +1,611 @@
-# Teste End-to-End do Fluxo de Pagamento (Stripe Test Mode)
+# Guia de teste E2E - Pagamento Stripe ProBar
 
-Este documento descreve, passo a passo e com comandos práticos, como testar o fluxo completo de pagamento do ProBar em modo de teste com Stripe (PaymentIntent com captura manual + Transfer/Connect + webhooks).
+Este guia descreve como testar o fluxo atual de pagamento do ProBar em modo de
+teste. Ele cobre PaymentIntent com captura manual, SetupIntent para pagamento
+futuro, confirmacao de presenca, ausencia, bloqueio de captura, liberacao
+automatica e cancelamento de autorizacao aprovado.
 
-Pré-requisitos
-- Código do backend e frontend rodando localmente (ou acessíveis).
-- Python 3.8+ e venv configurado no backend.
-- `stripe` CLI instalado (recomendado para webhooks locais).
-- Chaves Stripe Test: `sk_test_...` (secret) e `pk_test_...` (publishable).
+O guia nao cobre Pix nem refund/reversal real de pagamento capturado, pois essas
+partes ainda nao estao implementadas.
 
-Resumo do fluxo a testar
-- Criar um `Pedido` de teste
-- Backend cria `PaymentIntent` (capture_method=manual) e grava `Pagamento` PENDENTE
-- Frontend (ou CLI) confirma o PaymentIntent → status `requires_capture`
-- Captura manual (endpoint) ou captura automática via `processar_pagamentos_pendentes`
-- Webhook `payment_intent.succeeded` atualiza `Pagamento` e `Pedido` para `PAGO`
+## Pre-requisitos
 
-Como o metodo de pagamento e registrado
-- `metodo_pagamento`: gateway interno (atualmente `STRIPE`).
-- `stripe_payment_method_type`: metodo real usado na Stripe (ex.: `card`, `pix`, `boleto`).
-  Esse valor e preenchido quando o PaymentIntent e consultado (captura, job ou webhook).
+- Backend Django rodando.
+- Frontend Next.js rodando.
+- Banco migrado.
+- Stripe em modo teste.
+- Stripe CLI instalada para webhooks locais.
+- Bartender com conta Stripe Express de teste e onboarding completo.
+- Pedido com proposta aceita.
 
-Estrutura deste guia
-- Preparar ambiente (env vars, venv)
-- Rodar backend e Stripe CLI (encaminhar webhooks)
-- Criar dados de teste (usuário/pedido)
-- Criar PaymentIntent via endpoint backend
-- Confirmar PaymentIntent (Stripe CLI ou frontend)
-- Capturar pagamento (manual e automático)
-- Verificar resultados no DB e Stripe Dashboard
-- Troubleshooting comum
+Variaveis principais:
 
-1) Preparar variáveis de ambiente (PowerShell)
-
-Abra PowerShell e dentro do venv do projeto (ou no host onde o backend roda) defina:
+Backend:
 
 ```powershell
 $env:STRIPE_SECRET_KEY="sk_test_xxx"
-$env:STRIPE_PUBLISHABLE_KEY="pk_test_xxx"
-# O STRIPE_WEBHOOK_SECRET será definido após iniciar `stripe listen` (veja abaixo)
+$env:STRIPE_WEBHOOK_SECRET="whsec_xxx"
+$env:STRIPE_RETURN_URL="http://localhost:3000/bartender/home"
+$env:STRIPE_REFRESH_URL="http://localhost:3000/bartender/home"
+$env:STRIPE_PLATFORM_FEE_PERCENT="10"
+$env:STRIPE_MANUAL_CAPTURE_WINDOW_DAYS="5"
 ```
 
-No Linux/macOS (bash):
+Frontend:
 
-```bash
-export STRIPE_SECRET_KEY="sk_test_xxx"
-export STRIPE_PUBLISHABLE_KEY="pk_test_xxx"
+```powershell
+$env:NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_xxx"
+$env:NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8000/api/v1"
 ```
 
-2) Ativar ambiente Python e rodar migrations
+Em producao, `NEXT_PUBLIC_API_BASE_URL` nao pode apontar para `127.0.0.1`.
+
+## Rodar backend
 
 ```powershell
 cd C:\Users\Admin\OneDrive\Documentos\P5\probar\backend\probar_api
 .\venv\Scripts\activate
-pip install -r requirements.txt
 python manage.py migrate
+python manage.py runserver 0.0.0.0:8000
 ```
 
-3) Instalar e usar Stripe CLI para webhooks
+## Rodar frontend
 
-- Instale a CLI: https://stripe.com/docs/stripe-cli#install
-- Faça login e inicie o listener (PowerShell):
+```powershell
+cd C:\Users\Admin\OneDrive\Documentos\P5\probar\frontend\probar_app
+npm run dev
+```
+
+## Rodar Stripe CLI
+
+Em outro terminal:
 
 ```powershell
 stripe login
 stripe listen --forward-to http://localhost:8000/api/v1/stripe/webhook/ --print-secret
 ```
 
-O comando exibirá `Webhook signing secret for local endpoints: whsec_xxx`. Copie esse `whsec_xxx` e exporte:
+Copie o `whsec_xxx` retornado e configure `STRIPE_WEBHOOK_SECRET` no ambiente do
+backend antes de iniciar o servidor.
 
-```powershell
-$env:STRIPE_WEBHOOK_SECRET="whsec_xxx"
+## Cartoes de teste
+
+Use os cartoes de teste da Stripe no Payment Element.
+
+Casos comuns:
+
+- `4242 4242 4242 4242`: pagamento aprovado.
+- `4000 0000 0000 9995`: falha de pagamento.
+
+Use data futura, CVC qualquer e CEP valido quando solicitado.
+
+## Dados necessarios para testar
+
+1. Usuario cliente autenticado.
+2. Usuario bartender autenticado.
+3. Bartender com:
+   - `stripe_account_id`;
+   - `stripe_onboarding_completo=True`.
+4. Evento do cliente.
+5. Pedido criado para o bartender.
+6. Proposta aceita.
+7. Pedido com:
+   - `status=ACEITO`;
+   - `valor_total_aprovado`;
+   - `horas_aprovadas`;
+   - `presenca_status=PENDENTE`.
+
+O caminho recomendado e criar tudo pela UI:
+
+1. Cliente cria evento.
+2. Cliente envia proposta ao bartender.
+3. Destinatario aceita a proposta no chat.
+4. Cliente abre o pagamento pelo banner do chat.
+
+## Cenario A - Onboarding do bartender
+
+### 1. Gerar link de onboarding
+
+```http
+POST /api/v1/stripe/onboarding/
 ```
 
-Observação: `stripe listen` ficará rodando e encaminhará todos os eventos do seu workspace Stripe (test mode) para o endpoint local.
+Resultado esperado:
 
-4) Rodar o backend local
+- resposta contem `url`;
+- bartender e redirecionado para Stripe;
+- Stripe coleta dados da conta Express.
 
-No mesmo ambiente onde exportou as variáveis:
+### 2. Verificar status
 
-```powershell
-# ainda no venv
-python manage.py runserver 0.0.0.0:8000
+```http
+GET /api/v1/stripe/status/
 ```
 
-5) Criar dados de teste (usar API ou Django shell)
+Resultado esperado:
 
-Opção A — via endpoints do seu app (recomendado se o frontend existir): utilize a UI de teste do frontend para registrar cliente, bartender e criar pedido.
+```json
+{
+  "tem_conta_stripe": true,
+  "onboarding_completo": true
+}
+```
 
-Opção B — shell Django (rápido):
+Se o onboarding nao estiver completo, o cliente nao conseguira pagar esse
+bartender.
+
+## Cenario B - Pagamento dentro da janela de autorizacao
+
+Este cenario cria um PaymentIntent com captura manual.
+
+### 1. Abrir tela de pagamento
+
+No frontend:
+
+```text
+/client/payment?pedido={pedido_id}
+```
+
+Ou via API:
+
+```http
+POST /api/v1/stripe/pagar/{pedido_id}/
+```
+
+Resultado esperado:
+
+```json
+{
+  "mode": "payment",
+  "status": "PENDENTE",
+  "payment_intent_id": "pi_xxx",
+  "setup_intent_id": null,
+  "client_secret": "pi_xxx_secret_xxx",
+  "stripe_status": "requires_payment_method",
+  "finalizado_pelo_cliente": false
+}
+```
+
+### 2. Confirmar pagamento no frontend
+
+Use o Payment Element e o cartao `4242 4242 4242 4242`.
+
+O frontend chama `stripe.confirmPayment`.
+
+Quando a Stripe retornar `requires_capture`, o frontend chama:
+
+```http
+POST /api/v1/stripe/pagamento-autorizado/{pagamento_id}/
+```
+
+Resultado esperado:
+
+```json
+{
+  "status": "PENDENTE",
+  "stripe_status": "requires_capture",
+  "finalizado_pelo_cliente": true,
+  "presenca_status": "PENDENTE"
+}
+```
+
+Interpretacao:
+
+- pagamento esta autorizado;
+- ainda nao foi capturado;
+- pedido ainda nao deve ser tratado como pago/liberado.
+
+## Cenario C - Confirmar presenca e liberar pagamento
+
+Este cenario so deve funcionar depois do fim previsto do servico contratado.
+
+Fim previsto:
+
+```text
+evento.data + evento.hora_inicio + pedido.horas_aprovadas
+```
+
+Se `horas_aprovadas` estiver vazio, o fallback e o fim do evento.
+
+### 1. Tentar confirmar antes do fim do servico
+
+```http
+POST /api/v1/pedidos/{pedido_id}/confirmar-presenca/
+```
+
+Resultado esperado:
+
+```json
+{
+  "detail": "A presenca so pode ser registrada apos o fim previsto do servico"
+}
+```
+
+### 2. Ajustar dados para simular servico finalizado
+
+Em ambiente local/teste, ajuste o evento ou proposta aceita para que
+`servico_fim_previsto` esteja no passado.
+
+Exemplo via Django shell:
 
 ```powershell
 python manage.py shell
-# Exemplo (ajuste nomes de campos conforme modelo do seu projeto):
-from django.contrib.auth import get_user_model
-from core.models import Pedido, Evento
-User = get_user_model()
-cliente = User.objects.create_user(username='cli_test', email='cli@test', password='senha')
-# criar bartender e evento de exemplo — adaptar conforme modelos
-bartender = User.objects.create_user(username='bar_test', email='bar@test', password='senha')
-evento = Evento.objects.create(bartender=bartender, hora_fim=timezone.now())
-pedido = Pedido.objects.create(cliente=cliente, evento=evento, valor_total_aprovado=10000, status='ACEITO')
-print(pedido.id)
-exit()
 ```
 
-6) Criar PaymentIntent via endpoint backend
+```python
+from datetime import timedelta
+from django.utils import timezone
+from core.models import Pedido
 
-Faça a requisição para `POST /api/v1/stripe/pagar/{pedido_id}/` (substitua token/headers conforme autenticação do seu projeto):
+pedido = Pedido.objects.get(pk=PEDIDO_ID)
+pedido.evento.data = timezone.localdate()
+pedido.evento.hora_inicio = (timezone.localtime() - timedelta(hours=2)).time()
+pedido.evento.hora_fim = (timezone.localtime() + timedelta(hours=1)).time()
+pedido.evento.save(update_fields=["data", "hora_inicio", "hora_fim"])
+pedido.horas_aprovadas = 1
+pedido.save(update_fields=["horas_aprovadas"])
+```
+
+### 3. Confirmar presenca
+
+```http
+POST /api/v1/pedidos/{pedido_id}/confirmar-presenca/
+```
+
+Resultado esperado:
+
+- `presenca_status=PRESENTE`;
+- `presenca_origem=CLIENTE`;
+- se havia PaymentIntent `requires_capture`, o backend tenta capturar;
+- `Pagamento.status=PAGO`;
+- `Pedido.status=PAGO`.
+
+No frontend, a tela de pagamento deve mostrar pagamento liberado ou voltar ao
+chat com status atualizado.
+
+## Cenario D - Registrar ausencia e bloquear captura
+
+Este cenario deve ser executado depois do fim previsto do servico.
+
+### 1. Registrar ausencia
+
+```http
+POST /api/v1/pedidos/{pedido_id}/registrar-ausencia/
+```
+
+Resultado esperado:
+
+- `presenca_status=AUSENTE`;
+- `presenca_origem=CLIENTE`;
+- uma `SolicitacaoReembolso` e criada ou reutilizada;
+- captura fica bloqueada.
+
+### 2. Ver solicitacao do pedido
+
+```http
+GET /api/v1/pedidos/{pedido_id}/solicitacao-reembolso/
+```
+
+Tipos esperados:
+
+- `CANCELAMENTO_AUTORIZACAO`, se ha PaymentIntent ainda nao capturado;
+- `REEMBOLSO_CAPTURADO`, se pagamento ja estava `PAGO`;
+- `SEM_COBRANCA`, se nao havia cobranca efetiva.
+
+### 3. Tentar capturar depois da ausencia
+
+```http
+POST /api/v1/stripe/capturar/{pagamento_id}/
+```
+
+Resultado esperado:
+
+```json
+{
+  "erro": "Pagamento bloqueado porque o cliente registrou ausencia do bartender"
+}
+```
+
+## Cenario E - Liberacao automatica apos 5 minutos
+
+Este cenario testa o comando `processar_pagamentos_pendentes`.
+
+Pre-condicoes:
+
+- pagamento com `stripe_payment_intent_id`;
+- Stripe status `requires_capture`;
+- `Pagamento.status=PENDENTE`;
+- `presenca_status=PENDENTE`;
+- nao existe solicitacao ativa de reembolso;
+- `timezone.now() >= pedido.liberacao_automatica_em`.
+
+### 1. Ajustar fim do servico para o passado
+
+No Django shell, ajuste o evento e `horas_aprovadas` para que a liberacao
+automatica ja tenha passado.
+
+### 2. Rodar comando
 
 ```powershell
-curl -X POST http://localhost:8000/api/v1/stripe/pagar/1/ -H "Authorization: Token <USER_TOKEN>" -H "Content-Type: application/json"
+cd C:\Users\Admin\OneDrive\Documentos\P5\probar\backend\probar_api
+python manage.py processar_pagamentos_pendentes
 ```
 
-A resposta deve conter `client_secret` e/ou `payment_intent` id. O backend grava um `Pagamento` em `PENDENTE`.
+Resultado esperado:
 
-7) Confirmar o PaymentIntent (simular frontend)
+- comando informa `captured=1` para o pagamento elegivel;
+- `presenca_status=PRESENTE`;
+- `presenca_origem=AUTOMATICA`;
+- `Pagamento.status=PAGO`;
+- `Pedido.status=PAGO`.
 
-Opção A — Stripe CLI (rápida, sem frontend):
+Logs:
 
 ```powershell
-# supondo que o id do PaymentIntent seja pi_xxx
-stripe payment_intents confirm pi_xxx --payment_method pm_card_visa
+Get-Content .\logs\pagamentos_cron.log -Tail 200
 ```
 
-Opção B — usar Stripe.js no frontend (padrão):
+## Cenario F - Pagamento fora da janela de autorizacao
 
-```js
-// exemplo em frontend com client_secret
-const res = await stripe.confirmCardPayment(client_secret, {
-  payment_method: {
-    card: cardElement,
-    billing_details: { name: 'Teste' }
-  }
-});
+Este cenario cria SetupIntent e salva o cartao para cobranca futura.
+
+Pre-condicao:
+
+- evento ainda esta antes de `inicio_evento - STRIPE_MANUAL_CAPTURE_WINDOW_DAYS`.
+
+### 1. Iniciar pagamento
+
+```http
+POST /api/v1/stripe/pagar/{pedido_id}/
 ```
 
-Cartões de teste úteis (Test Mode):
+Resultado esperado:
 
-- `4242 4242 4242 4242` — sucesso
-- `4000 0000 0000 9995` — falha (payment_failed)
-
-Após confirmação o PaymentIntent deve ficar em `requires_capture` (por capture_method=manual). Se estiver `requires_payment_method`, o cliente não completou a confirmação.
-
-8) Captura do pagamento
-
-8.1 Captura manual (via endpoint)
-
-```powershell
-curl -X POST http://localhost:8000/api/v1/stripe/capturar/<pagamento_id>/ -H "Authorization: Token <USER_TOKEN>"
+```json
+{
+  "mode": "setup",
+  "status": "PENDENTE",
+  "payment_intent_id": null,
+  "setup_intent_id": "seti_xxx",
+  "client_secret": "seti_xxx_secret_xxx"
+}
 ```
 
-Após executar, verifique que `Pagamento.status` mudou para `PAGO` e `Pedido.status` também. O webhook `payment_intent.succeeded` também será recebido (stripe CLI encaminha), mas sua aplicação já marca `PAGO` ao capturar.
+### 2. Confirmar SetupIntent
 
-8.2 Captura automática (job)
+No frontend, o Payment Element chama `stripe.confirmSetup`.
 
-Para simular a captura automática ajuste o `evento.hora_fim` no DB para uma data há mais de 2 horas. Depois rode:
+Depois, o frontend sincroniza:
+
+```http
+POST /api/v1/stripe/setup-confirmado/{pagamento_id}/
+```
+
+Resultado esperado:
+
+- `stripe_status=succeeded`;
+- `payment_method_id=pm_xxx`;
+- pagamento continua `PENDENTE`;
+- nao ha PaymentIntent ainda.
+
+### 3. Simular entrada na janela de autorizacao
+
+Ajuste o evento para cair dentro da janela.
+
+### 4. Rodar comando automatico
 
 ```powershell
 python manage.py processar_pagamentos_pendentes
 ```
 
-Verifique o log:
+Resultado esperado:
 
-```powershell
-Get-Content .\\logs\\pagamentos_cron.log -Tail 200
+- comando cria PaymentIntent off-session usando o `payment_method_id` salvo;
+- `stripe_payment_intent_id` e salvo no `Pagamento`;
+- se Stripe retornar `requires_capture`, o pagamento fica autorizado e
+  aguardando presenca/liberacao.
+
+## Cenario G - Cancelamento de autorizacao aprovado
+
+Este cenario testa a infraestrutura atual de disputa sem refund real.
+
+Pre-condicoes:
+
+- cliente registrou ausencia;
+- existe `SolicitacaoReembolso` do tipo `CANCELAMENTO_AUTORIZACAO`;
+- PaymentIntent esta `requires_capture`;
+- admin aprovou a solicitacao.
+
+### 1. Admin aprova solicitacao
+
+```http
+POST /api/v1/solicitacoes-reembolso/{id}/aprovar/
 ```
 
-9) Verificar no Stripe Dashboard (Test mode)
+Body exemplo:
 
-- Acesse https://dashboard.stripe.com/test
-- Busque pelo `PaymentIntent` (pi_xxx) e verifique `Status`, `Charges`, e em Connect verifique `Transfer` / `Application fee` (se estiver usando fees). As transfers aparecerão na conta do bartender de teste.
-
-10) Testar webhooks manualmente (opcional)
-
-Com Stripe CLI você pode reenviar ou acionar eventos:
-
-```powershell
-stripe trigger payment_intent.succeeded
-# ou reenviar um evento que o CLI recebeu:
-stripe events resend evt_xxx
+```json
+{
+  "decisao_admin": "Ausencia validada pela plataforma.",
+  "valor_aprovado": "250.00"
+}
 ```
 
-11) Verificações finais no banco
+### 2. Admin executa cancelamento
 
-```powershell
-python manage.py shell
-from core.models import Pagamento, Pedido
-print(Pagamento.objects.filter(pedido=1).values())
-print(Pedido.objects.get(pk=1).status)
-exit()
+```http
+POST /api/v1/solicitacoes-reembolso/{id}/executar-cancelamento/
 ```
 
-12) Troubleshooting rápido
-- Webhook 400: verifique `STRIPE_WEBHOOK_SECRET` e se `stripe listen` está rodando. Confirme que o header `Stripe-Signature` é repassado corretamente.
-- PaymentIntent em `requires_payment_method`: cliente não confirmou; reexecute a confirmação (Stripe CLI ou frontend).
-- Capture retorna erro `cannot be captured`: verifique `payment_intent.status` (só capture `requires_capture`).
-- Sem Transfer/fee no Dashboard: em Connect, confirme que o `transfer_data.destination` foi setado para a conta de teste do bartender.
+Resultado esperado quando Stripe confirma cancelamento:
 
-13) (Opcional) Script de automação — ideias
-- Um script Python utilizando `requests` para chamar seu endpoint de criar pagamento, `stripe` Python SDK para confirmar o PaymentIntent (ou `stripe-cli` via subprocess), e depois chamar `processar_pagamentos_pendentes` via `manage.py` e validar objetos no DB.
+- `SolicitacaoReembolso.status=CONCLUIDA`;
+- `SolicitacaoReembolso.stripe_status=canceled`;
+- `Pagamento.status=CANCELADO`;
+- nenhum Refund e criado.
 
-Exemplo de checklist para executar agora
-1. Exportar `STRIPE_SECRET_KEY`.
-2. `stripe login && stripe listen --forward-to http://localhost:8000/api/v1/stripe/webhook/ --print-secret` e exportar `STRIPE_WEBHOOK_SECRET`.
-3. Rodar `python manage.py runserver`.
-4. Criar pedido teste (ou pelo frontend).
-5. `POST /api/v1/stripe/pagar/{pedido_id}` → copiar `pi_xxx`.
-6. `stripe payment_intents confirm pi_xxx --payment_method pm_card_visa`.
-7. Chamar endpoint de captura manual ou rodar `processar_pagamentos_pendentes`.
-8. Verificar logs e Stripe Dashboard.
+Se o PaymentIntent ja estiver `succeeded`, o sistema nao cancela nem reembolsa.
+Ele muda o tipo para `REEMBOLSO_CAPTURADO` e registra erro orientando tratar em
+etapa futura.
 
-Se quiser, eu posso gerar o script Python de integração que executa os passos 5→8 automaticamente e executá‑lo no seu ambiente. Deseja que eu gere esse script agora?
+## Cenario H - Webhooks
+
+Com Stripe CLI rodando, eventos sao encaminhados para:
+
+```http
+POST /api/v1/stripe/webhook/
+```
+
+Eventos tratados:
+
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `payment_intent.canceled`
+- `setup_intent.succeeded`
+- `setup_intent.canceled`
+
+Verificacoes:
+
+- assinatura usa `STRIPE_WEBHOOK_SECRET`;
+- `payment_intent.canceled` marca pagamento como `CANCELADO`;
+- `setup_intent.succeeded` salva payment method;
+- `payment_intent.succeeded` so marca `PAGO` se a regra local de presenca ou
+  liberacao automatica permitir.
+
+## Consultas uteis no Django shell
+
+```python
+from core.models import Pedido, Pagamento, SolicitacaoReembolso
+
+pedido = Pedido.objects.get(pk=PEDIDO_ID)
+print(pedido.status)
+print(pedido.numero_bartender)
+print(pedido.presenca_status, pedido.presenca_origem)
+print(pedido.servico_fim_previsto)
+print(pedido.liberacao_automatica_em)
+
+pagamento = Pagamento.objects.get(pedido=pedido)
+print(pagamento.status)
+print(pagamento.valor)
+print(pagamento.stripe_payment_intent_id)
+print(pagamento.stripe_setup_intent_id)
+print(pagamento.stripe_payment_method_id)
+print(pagamento.finalizado_pelo_cliente)
+
+print(list(SolicitacaoReembolso.objects.filter(pedido=pedido).values(
+    "id",
+    "tipo",
+    "status",
+    "valor_solicitado",
+    "valor_aprovado",
+    "stripe_status",
+    "stripe_erro",
+)))
+```
+
+## Checklist rapido
+
+### Pagamento autorizado
+
+- [ ] Pedido esta `ACEITO`.
+- [ ] Bartender tem onboarding completo.
+- [ ] Cliente abriu `/client/payment?pedido={id}`.
+- [ ] PaymentIntent foi criado.
+- [ ] Stripe retornou `requires_capture`.
+- [ ] Backend sincronizou `/stripe/pagamento-autorizado/{pagamento_id}/`.
+- [ ] `Pagamento.status=PENDENTE`.
+- [ ] `finalizado_pelo_cliente=True`.
+- [ ] `presenca_status=PENDENTE`.
+
+### Captura por presenca
+
+- [ ] Servico ja passou de `servico_fim_previsto`.
+- [ ] Cliente chamou confirmar presenca.
+- [ ] `presenca_status=PRESENTE`.
+- [ ] Stripe capturou o PaymentIntent.
+- [ ] `Pagamento.status=PAGO`.
+- [ ] `Pedido.status=PAGO`.
+
+### Ausencia
+
+- [ ] Servico ja passou de `servico_fim_previsto`.
+- [ ] Cliente registrou ausencia.
+- [ ] `presenca_status=AUSENTE`.
+- [ ] Foi criada solicitacao de reembolso/caso financeiro.
+- [ ] Captura manual e automatica ficam bloqueadas.
+
+### Liberacao automatica
+
+- [ ] `timezone.now() >= liberacao_automatica_em`.
+- [ ] Presenca ainda esta `PENDENTE`.
+- [ ] Nao existe solicitacao ativa.
+- [ ] Comando automatico rodou.
+- [ ] `presenca_origem=AUTOMATICA`.
+- [ ] Pagamento foi capturado.
+
+## Troubleshooting
+
+### Erro `127.0.0.1:8000 ERR_CONNECTION_REFUSED` em deploy
+
+O frontend foi buildado apontando para API local. Ajuste a variavel publica do
+frontend para a URL real da API em producao, por exemplo:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=https://sua-api.com/api/v1
+```
+
+Depois gere novo build/deploy.
+
+### `Pedido nao esta aceito`
+
+O pagamento so inicia para pedido `ACEITO` ou `PAGO`. Confira se a proposta foi
+aceita corretamente e se os snapshots financeiros foram salvos.
+
+### `Bartender sem conta Stripe`
+
+O bartender ainda nao tem `stripe_account_id`. Rode o onboarding.
+
+### `Onboarding do bartender incompleto`
+
+O Stripe Account ainda nao retornou como completo. Acesse novamente o link de
+onboarding ou consulte `/stripe/status/`.
+
+### PaymentIntent continua `requires_payment_method`
+
+O cliente nao confirmou o pagamento ou o cartao falhou. Tente novamente pelo
+Payment Element.
+
+### PaymentIntent esta `requires_capture`, mas pedido nao esta pago
+
+Esse e o estado esperado de "pagamento autorizado". Ainda falta confirmar
+presenca ou aguardar a liberacao automatica.
+
+### Cliente nao consegue confirmar presenca
+
+Confira `servico_fim_previsto`. O backend bloqueia confirmacao antes do fim
+previsto do servico contratado.
+
+### Captura bloqueada por solicitacao ativa
+
+Existe `SolicitacaoReembolso` ativa para o pedido. Enquanto ela estiver ativa,
+a captura fica bloqueada.
+
+### PaymentIntent ja esta `succeeded`, mas banco nao esta `PAGO`
+
+Pode ter ocorrido captura externa fora da regra local. O webhook atual nao marca
+como pago se a regra local de presenca/liberacao nao permitir. Esse caso exige
+analise administrativa/sincronizacao manual controlada.
+
+## Resultado esperado do fluxo atual
+
+O fluxo esta correto quando:
+
+- proposta aceita gera pedido `ACEITO` com valor aprovado;
+- pagamento autorizado nao e tratado como liberado;
+- ausencia bloqueia captura e abre caso financeiro;
+- presenca confirmada libera captura;
+- ausencia pendente libera automaticamente apenas 5 minutos apos o fim previsto
+  do servico contratado;
+- cancelamento de autorizacao aprovado cancela apenas PaymentIntent ainda nao
+  capturado;
+- refund de pagamento capturado continua reservado para etapa futura.
