@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
         migrations.AlterModelOptions(
             name='mensagem',
             options={
-                'ordering': ['criado_em', 'id'],
+                'ordering': ['id'],
                 'verbose_name': 'Mensagem',
                 'verbose_name_plural': 'Mensagens',
             },

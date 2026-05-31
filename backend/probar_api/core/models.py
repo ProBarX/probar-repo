@@ -823,7 +823,7 @@ class Mensagem(BaseModel):
     class Meta:
         verbose_name = 'Mensagem'
         verbose_name_plural = 'Mensagens'
-        ordering = ['criado_em', 'id']
+        ordering = ['id']
 
     def __str__(self):
         remetente = self.remetente.email if self.remetente else "Sistema"

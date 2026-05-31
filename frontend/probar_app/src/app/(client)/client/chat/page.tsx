@@ -124,10 +124,7 @@ function mergeMessages(existing: Mensagem[], incoming: Mensagem[]) {
   existing.forEach((msg) => byId.set(msg.id, msg))
   incoming.forEach((msg) => byId.set(msg.id, msg))
 
-  return [...byId.values()].sort((a, b) => {
-    const byDate = new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime()
-    return byDate !== 0 ? byDate : a.id - b.id
-  })
+  return [...byId.values()].sort((a, b) => a.id - b.id)
 }
 
 function mergeChatsById(existing: ChatEnriquecido[], incoming: ChatEnriquecido[]) {
